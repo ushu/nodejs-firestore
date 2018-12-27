@@ -32,7 +32,7 @@ import {Timestamp} from './timestamp';
 import {FieldPath, ResourcePath, validateFieldPath, validateResourcePath} from './path';
 import {autoId, requestTag} from './util';
 import {validateFunction, validateInteger, validateMinNumberOfArguments, validatePropertyValue, customObjectMessage, createErrorDescription} from './validate';
-import {DocumentData, UpdateData, Precondition, SetOptions, UserInput} from './types';
+import {DocumentData, UpdateData, Precondition, SetOptions} from './types';
 import {Serializer} from './serializer';
 import {Firestore} from './index';
 
@@ -403,7 +403,7 @@ export class DocumentReference {
    */
   update(
       dataOrField: (UpdateData|string|FieldPath),
-      ...preconditionOrValues: Array<UserInput|string|FieldPath|Precondition>):
+      ...preconditionOrValues: Array<unknown|string|FieldPath|Precondition>):
       Promise<WriteResult> {
     validateMinNumberOfArguments('update', arguments, 1);
 
@@ -541,7 +541,7 @@ class FieldFilter {
   constructor(
       private readonly serializer: Serializer, readonly field: FieldPath,
       private readonly op: api.StructuredQuery.FieldFilter.Operator,
-      private readonly value: UserInput) {}
+      private readonly value: unknown) {}
 
   /**
    * Returns whether this FieldFilter uses an equals comparison.
@@ -910,7 +910,7 @@ export class Query {
    * @returns 'true' if the input is a single DocumentSnapshot..
    */
   static _isDocumentSnapshot(fieldValuesOrDocumentSnapshot:
-                                 Array<DocumentSnapshot|UserInput>): boolean {
+                                 Array<DocumentSnapshot|unknown>): boolean {
     return (
         fieldValuesOrDocumentSnapshot.length === 1 &&
         (fieldValuesOrDocumentSnapshot[0] instanceof DocumentSnapshot));
@@ -929,7 +929,7 @@ export class Query {
    */
   static _extractFieldValues(
       documentSnapshot: DocumentSnapshot, fieldOrders: FieldOrder[]) {
-    const fieldValues: UserInput[] = [];
+    const fieldValues: unknown[] = [];
 
     for (const fieldOrder of fieldOrders) {
       if (FieldPath.documentId().isEqual(fieldOrder.field)) {
@@ -1005,7 +1005,7 @@ export class Query {
    *   });
    * });
    */
-  where(fieldPath: string|FieldPath, opStr: string, value: UserInput): Query {
+  where(fieldPath: string|FieldPath, opStr: string, value: unknown): Query {
     validateFieldPath('fieldPath', fieldPath);
     validateQueryOperator('opStr', opStr, value);
     validateQueryValue('value', value);
@@ -1199,7 +1199,7 @@ export class Query {
    * @returns The implicit ordering semantics.
    */
   private createImplicitOrderBy(cursorValuesOrDocumentSnapshot:
-                                    Array<DocumentSnapshot|UserInput>):
+                                    Array<DocumentSnapshot|unknown>):
       FieldOrder[] {
     if (!Query._isDocumentSnapshot(cursorValuesOrDocumentSnapshot)) {
       return this._fieldOrders;
@@ -1251,13 +1251,13 @@ export class Query {
    */
   private createCursor(
       fieldOrders: FieldOrder[],
-      cursorValuesOrDocumentSnapshot: Array<DocumentSnapshot|UserInput>,
+      cursorValuesOrDocumentSnapshot: Array<DocumentSnapshot|unknown>,
       before: boolean): api.ICursor {
     let fieldValues;
 
     if (Query._isDocumentSnapshot(cursorValuesOrDocumentSnapshot)) {
       fieldValues = Query._extractFieldValues(
-          cursorValuesOrDocumentSnapshot[0], fieldOrders);
+          cursorValuesOrDocumentSnapshot[0] as DocumentSnapshot, fieldOrders);
     } else {
       fieldValues = cursorValuesOrDocumentSnapshot;
     }
@@ -1302,12 +1302,14 @@ export class Query {
    * query.
    * @private
    */
-  private convertReference(reference: string|
-                           DocumentReference): DocumentReference {
-    if (typeof reference === 'string') {
+  private convertReference(val: unknown): DocumentReference {
+    let reference : DocumentReference;
+
+    if (typeof val === 'string') {
       reference =
-          new DocumentReference(this._firestore, this._path.append(reference));
-    } else if (reference instanceof DocumentReference) {
+          new DocumentReference(this._firestore, this._path.append(val));
+    } else if (val instanceof DocumentReference) {
+      reference = val;
       if (!this._path.isPrefixOf(reference._path)) {
         throw new Error(
             `"${reference.path}" is not part of the query result set and ` +
@@ -1346,7 +1348,7 @@ export class Query {
    *   });
    * });
    */
-  startAt(...fieldValuesOrDocumentSnapshot: Array<DocumentSnapshot|UserInput>):
+  startAt(...fieldValuesOrDocumentSnapshot: Array<DocumentSnapshot|unknown>):
       Query {
     validateMinNumberOfArguments('startAt', arguments, 1);
 
@@ -1382,7 +1384,7 @@ export class Query {
    * });
    */
   startAfter(...fieldValuesOrDocumentSnapshot:
-                 Array<DocumentSnapshot|UserInput>): Query {
+                 Array<DocumentSnapshot|unknown>): Query {
     validateMinNumberOfArguments('startAfter', arguments, 1);
 
     const options = extend(true, {}, this._queryOptions);
@@ -1416,7 +1418,7 @@ export class Query {
    * });
    */
   endBefore(...fieldValuesOrDocumentSnapshot:
-                Array<DocumentSnapshot|UserInput>): Query {
+                Array<DocumentSnapshot|unknown>): Query {
     validateMinNumberOfArguments('endBefore', arguments, 1);
 
     const options = extend(true, {}, this._queryOptions);
@@ -1449,7 +1451,7 @@ export class Query {
    *   });
    * });
    */
-  endAt(...fieldValuesOrDocumentSnapshot: Array<DocumentSnapshot|UserInput>):
+  endAt(...fieldValuesOrDocumentSnapshot: Array<DocumentSnapshot|unknown>):
       Query {
     validateMinNumberOfArguments('endAt', arguments, 1);
 

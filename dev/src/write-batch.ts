@@ -25,7 +25,7 @@ import {FieldPath, validateFieldPath} from './path';
 import {DocumentReference, validateDocumentReference} from './reference';
 import {isPlainObject, Serializer} from './serializer';
 import {Timestamp} from './timestamp';
-import {AnyJs, Precondition as PublicPrecondition, SetOptions, UpdateData, UserInput} from './types';
+import {Precondition as PublicPrecondition, SetOptions, UpdateData} from './types';
 import {DocumentData} from './types';
 import {requestTag} from './util';
 
@@ -337,14 +337,14 @@ export class WriteBatch {
   update(
       documentRef: DocumentReference, dataOrField: UpdateData|string|FieldPath,
       ...preconditionOrValues:
-          Array<{lastUpdateTime?: Timestamp}|AnyJs|string|FieldPath>):
+          Array<{lastUpdateTime?: Timestamp}|unknown|string|FieldPath>):
       WriteBatch {
     validateMinNumberOfArguments('update', arguments, 2);
     validateDocumentReference('documentRef', documentRef);
 
     this.verifyNotCommitted();
 
-    const updateMap = new Map();
+    const updateMap = new Map<FieldPath, unknown>();
     let precondition = new Precondition({exists: true});
 
     const argumentError = 'Update() requires either a single JavaScript ' +
@@ -735,8 +735,8 @@ export function validateDocumentData(
  * @param data An update map with field/value pairs.
  * @returns 'true' if the input is a valid update map.
  */
-export function validateUpdate(arg: string|number, data: UpdateData): void {
-  const fields: UserInput = [];
+export function validateUpdate(arg: string|number, data: Map<FieldPath, unknown>): void {
+  const fields: FieldPath[] = [];
   data.forEach((value, key) => {
     fields.push(key);
   });

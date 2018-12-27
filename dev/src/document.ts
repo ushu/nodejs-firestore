@@ -23,7 +23,7 @@ import {FieldPath, validateFieldPath} from './path';
 import {DocumentReference} from './reference';
 import {isPlainObject, Serializer} from './serializer';
 import {Timestamp} from './timestamp';
-import {AnyJs, ApiMapValue, DocumentData, UpdateData, UserInput, ValidationOptions} from './types';
+import {ApiMapValue, DocumentData, UpdateData, ValidationOptions} from './types';
 
 import api = google.firestore.v1beta1;
 import {createErrorDescription, customObjectMessage,} from './validate';
@@ -150,7 +150,7 @@ export class DocumentSnapshot {
    * @param data The field/value map to expand.
    * @return The created DocumentSnapshot.
    */
-  static fromUpdateMap(ref: DocumentReference, data: UpdateData):
+  static fromUpdateMap(ref: DocumentReference, data: Map<FieldPath, unknown>):
       DocumentSnapshot {
     const serializer = ref.firestore._serializer!;
 
@@ -159,7 +159,7 @@ export class DocumentSnapshot {
      * 'target'.
      */
     function merge(
-        target: ApiMapValue, value: AnyJs, path: string[], pos: number) {
+        target: ApiMapValue, value: unknown, path: string[], pos: number) {
       const key = path[pos];
       const isLast = pos === path.length - 1;
 
@@ -389,7 +389,7 @@ export class DocumentSnapshot {
    *   console.log(`Retrieved field value: ${field}`);
    * });
    */
-  get(field: string|FieldPath): UserInput {
+  get(field: string|FieldPath): any { // tslint:disable-line no-any
     validateFieldPath('field', field);
 
     const protoField = this.protoField(field);
@@ -598,7 +598,7 @@ export class DocumentMask {
    * @param data A map with fields to modify. Only the keys are used to extract
    * the document mask.
    */
-  static fromUpdateMap(data: UpdateData): DocumentMask {
+  static fromUpdateMap(data: Map<FieldPath, unknown>): DocumentMask {
     const fieldPaths: FieldPath[] = [];
 
     data.forEach((value, key) => {
@@ -831,6 +831,7 @@ export class DocumentMask {
 export class DocumentTransform {
   private readonly _ref: DocumentReference;
   private readonly _transforms: Map<FieldPath, FieldTransform>;
+
   /**
    * @private
    * @hideconstructor
@@ -842,6 +843,7 @@ export class DocumentTransform {
     this._ref = ref;
     this._transforms = transforms;
   }
+
   /**
    * Generates a DocumentTransform from a JavaScript object.
    *
@@ -852,14 +854,12 @@ export class DocumentTransform {
    */
   static fromObject(ref: DocumentReference, obj: DocumentData):
       DocumentTransform {
-    const updateMap = new Map<FieldPath, FieldTransform>();
-
+    const updateMap = new Map<FieldPath, unknown>();
     for (const prop in obj) {
       if (obj.hasOwnProperty(prop)) {
         updateMap.set(new FieldPath(prop), obj[prop]);
       }
     }
-
     return DocumentTransform.fromUpdateMap(ref, updateMap);
   }
 
@@ -871,7 +871,7 @@ export class DocumentTransform {
    * @param data The update data to extract the transformations from.
    * @returns The Document Transform.
    */
-  static fromUpdateMap(ref: DocumentReference, data: UpdateData):
+  static fromUpdateMap(ref: DocumentReference, data: Map<FieldPath, unknown>):
       DocumentTransform {
     const transforms = new Map<FieldPath, FieldTransform>();
 
