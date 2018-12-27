@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-import {FieldPath} from './path';
-import {DocumentReference} from './reference';
+import {FieldPath, validateFieldPath} from './path';
+import {DocumentReference, validateDocumentReference} from './reference';
 import {isPlainObject} from './serializer';
-import {AnyDuringMigration, ReadOptions} from './types';
+import {ReadOptions} from './types';
+import {createErrorDescription} from './validate';
 
 /**
  * Generate a unique client-side identifier.
@@ -54,12 +55,10 @@ export function requestTag(): string {
  * and Transaction class.
  *
  * @private
- * @param validator The argument validator to use.
  * @param documentRefsOrReadOptions An array of document references followed by
  * an optional ReadOptions object.
  */
 export function parseGetAllArguments(
-    validator: AnyDuringMigration,
     documentRefsOrReadOptions: Array<DocumentReference|ReadOptions>):
     {documents: DocumentReference[], fieldMask: FieldPath[]|null} {
   let documents: DocumentReference[];
@@ -88,13 +87,54 @@ export function parseGetAllArguments(
   }
 
   for (let i = 0; i < documents.length; ++i) {
-    validator.isDocumentReference(i, documents[i]);
+    validateDocumentReference(i, documents[i]);
   }
 
-  validator.isOptionalReadOptions('options', readOptions);
+  validateReadOptions('options', readOptions);
   const fieldMask = readOptions && readOptions.fieldMask ?
       readOptions.fieldMask.map(
           fieldPath => FieldPath.fromArgument(fieldPath)) :
       null;
   return {fieldMask, documents};
+}
+
+
+
+/**
+ * Validates the use of 'options' as ReadOptions and enforces that 'fieldMask'
+ * is an array of strings or field paths.
+ *
+ * @private
+ * @param options.fieldMask - The subset of fields to return from a read
+ * operation.
+ */
+export function validateReadOptions(arg: number|string, val?: unknown): void {
+  if (val !== undefined) {
+    if (typeof val !== 'object' && val === null) {
+      throw new Error(`${
+          createErrorDescription(
+              arg, 'read option')} Input is not an object.'`);
+    }
+
+    const options = val as {[k: string]: unknown};
+
+    if (options.fieldMask === undefined) {
+    }
+
+    if (!Array.isArray(options.fieldMask)) {
+      throw new Error(`${
+          createErrorDescription(
+              arg, 'read option')} "fieldMask" is not an array.`);
+    }
+
+    for (let i = 0; i < options.fieldMask.length; ++i) {
+      try {
+        validateFieldPath(i, options.fieldMask[i]);
+      } catch (err) {
+        throw new Error(`${
+            createErrorDescription(
+                arg, 'read option')} "fieldMask" is not valid: ${err.message}`);
+      }
+    }
+  }
 }

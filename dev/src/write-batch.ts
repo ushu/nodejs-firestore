@@ -18,18 +18,19 @@ import * as assert from 'assert';
 
 import {google} from '../protos/firestore_proto_api';
 
-import {DocumentMask, DocumentSnapshot, DocumentTransform, Precondition} from './document';
+import {DocumentMask, DocumentSnapshot, DocumentTransform, Precondition, validateFieldValue, validateUserInput} from './document';
 import {Firestore} from './index';
 import {logger} from './logger';
-import {FieldPath} from './path';
-import {DocumentReference} from './reference';
-import {Serializer} from './serializer';
+import {FieldPath, validateFieldPath} from './path';
+import {DocumentReference, validateDocumentReference} from './reference';
+import {isPlainObject, Serializer} from './serializer';
 import {Timestamp} from './timestamp';
-import {AnyDuringMigration, AnyJs, Precondition as PublicPrecondition, SetOptions, UpdateData, UserInput} from './types';
+import {AnyJs, Precondition as PublicPrecondition, SetOptions, UpdateData, UserInput} from './types';
 import {DocumentData} from './types';
 import {requestTag} from './util';
 
 import api = google.firestore.v1beta1;
+import {createErrorDescription, customObjectMessage, validateMaxNumberOfArguments, validateMinNumberOfArguments} from './validate';
 
 /*!
  * Google Cloud Functions terminates idle connections after two minutes. After
@@ -102,7 +103,6 @@ interface WriteOp {
  */
 export class WriteBatch {
   private readonly _firestore: Firestore;
-  private readonly _validator: AnyDuringMigration;
   private readonly _serializer: Serializer;
   private readonly _writes: WriteOp[] = [];
 
@@ -115,7 +115,6 @@ export class WriteBatch {
    */
   constructor(firestore) {
     this._firestore = firestore;
-    this._validator = firestore._validator;
     this._serializer = new Serializer(firestore);
   }
 
@@ -160,12 +159,8 @@ export class WriteBatch {
    * });
    */
   create(documentRef: DocumentReference, data: DocumentData): WriteBatch {
-    this._validator.isDocumentReference('documentRef', documentRef);
-    this._validator.isDocument('data', data, {
-      allowEmpty: true,
-      allowDeletes: 'none',
-      allowTransforms: true,
-    });
+    validateDocumentReference('documentRef', documentRef);
+    validateDocumentData('data', data, /* allowDeletes= */ false);
 
     this.verifyNotCommitted();
 
@@ -208,8 +203,8 @@ export class WriteBatch {
    */
   delete(documentRef: DocumentReference, precondition?: PublicPrecondition):
       WriteBatch {
-    this._validator.isDocumentReference('documentRef', documentRef);
-    this._validator.isOptionalDeletePrecondition('precondition', precondition);
+    validateDocumentReference('documentRef', documentRef);
+    validateDeletePrecondition('precondition', precondition);
 
     this.verifyNotCommitted();
 
@@ -257,16 +252,13 @@ export class WriteBatch {
    */
   set(documentRef: DocumentReference, data: DocumentData,
       options?: SetOptions): WriteBatch {
-    this._validator.isOptionalSetOptions('options', options);
+    validateSetOptions('options', options);
     const mergeLeaves = options && options.merge === true;
     const mergePaths = options && options.mergeFields;
 
-    this._validator.isDocumentReference('documentRef', documentRef);
-    this._validator.isDocument('data', data, {
-      allowEmpty: true,
-      allowDeletes: mergePaths || mergeLeaves ? 'all' : 'none',
-      allowTransforms: true,
-    });
+    validateDocumentReference('documentRef', documentRef);
+    validateDocumentData(
+        'data', data, /* allowDeletes= */ !!(mergePaths || mergeLeaves));
 
     this.verifyNotCommitted();
 
@@ -347,8 +339,8 @@ export class WriteBatch {
       ...preconditionOrValues:
           Array<{lastUpdateTime?: Timestamp}|AnyJs|string|FieldPath>):
       WriteBatch {
-    this._validator.minNumberOfArguments('update', arguments, 2);
-    this._validator.isDocumentReference('documentRef', documentRef);
+    validateMinNumberOfArguments('update', arguments, 2);
+    validateDocumentReference('documentRef', documentRef);
 
     this.verifyNotCommitted();
 
@@ -366,19 +358,14 @@ export class WriteBatch {
       try {
         for (let i = 1; i < arguments.length; i += 2) {
           if (i === arguments.length - 1) {
-            this._validator.isUpdatePrecondition(i, arguments[i]);
+            validateUpdatePrecondition(i, arguments[i]);
             precondition = new Precondition(arguments[i]);
           } else {
-            this._validator.isFieldPath(i, arguments[i]);
-            this._validator.minNumberOfArguments('update', arguments, i + 1);
+            validateFieldPath(i, arguments[i]);
+            validateMinNumberOfArguments('update', arguments, i + 1);
 
             const fieldPath = FieldPath.fromArgument(arguments[i]);
-            this._validator.isFieldValue(
-                i, arguments[i + 1], {
-                  allowDeletes: 'root',
-                  allowTransforms: true,
-                },
-                fieldPath);
+            validateFieldValue(i, arguments[i + 1], fieldPath);
             updateMap.set(fieldPath, arguments[i + 1]);
           }
         }
@@ -390,20 +377,16 @@ export class WriteBatch {
       }
     } else {
       try {
-        this._validator.isDocument('dataOrField', dataOrField, {
-          allowEmpty: false,
-          allowDeletes: 'root',
-          allowTransforms: true,
-        });
-        this._validator.maxNumberOfArguments('update', arguments, 3);
+        validateUpdateMap('dataOrField', dataOrField);
+        validateMaxNumberOfArguments('update', arguments, 3);
 
         Object.keys(dataOrField).forEach(key => {
-          this._validator.isFieldPath(key, key);
+          validateFieldPath(key, key);
           updateMap.set(FieldPath.fromArgument(key), dataOrField[key]);
         });
 
         if (preconditionOrValues.length > 0) {
-          this._validator.isUpdatePrecondition(
+          validateUpdatePrecondition(
               'preconditionOrValues', preconditionOrValues[0]);
           precondition = new Precondition(
               preconditionOrValues[0] as {lastUpdateTime?: Timestamp});
@@ -417,7 +400,7 @@ export class WriteBatch {
       }
     }
 
-    this._validator.isUpdateMap('dataOrField', updateMap);
+    validateUpdate('dataOrField', updateMap);
 
     const document = DocumentSnapshot.fromUpdateMap(documentRef, updateMap);
     const documentMask = DocumentMask.fromUpdateMap(updateMap);
@@ -589,6 +572,162 @@ export class WriteBatch {
   }
 }
 
+
+/**
+ * Validates the use of 'options' as a Precondition and enforces that 'exists'
+ * and 'lastUpdateTime' use valid types.
+ *
+ * @private
+ * @param options.exists Whether the referenced document should exist.
+ * @param options.lastUpdateTime The last update time of the referenced
+ * document in Firestore.
+ * @param allowExist Whether to allow the 'exists' preconditions.
+ * @returns 'true' if the input is a valid Precondition.
+ */
+function validatePrecondition(
+    arg: string|number, val: unknown, allowExist: boolean): void {
+  if (typeof val !== 'object' || val === null) {
+    throw new Error('Input is not an object.');
+  }
+
+  const precondition = val as {[k: string]: unknown};
+
+  let conditions = 0;
+
+  if (precondition.exists !== undefined) {
+    ++conditions;
+    if (!allowExist) {
+      throw new Error(`${
+          createErrorDescription(
+              arg, 'precondition')} "exists" is not an allowed condition.`);
+    }
+    if (typeof precondition.exists !== 'boolean') {
+      throw new Error(`${
+          createErrorDescription(
+              arg, 'precondition')} "exists" is not a boolean.'`);
+    }
+  }
+
+  if (precondition.lastUpdateTime !== undefined) {
+    ++conditions;
+    if (!(precondition.lastUpdateTime instanceof Timestamp)) {
+      throw new Error(`${
+          createErrorDescription(
+              arg,
+              'precondition')} "lastUpdateTime" is not a Firestore Timestamp.`);
+    }
+  }
+
+  if (conditions > 1) {
+    throw new Error(`${
+        createErrorDescription(
+            arg, 'precondition')} Input contains more than one condition.`);
+  }
+}
+
+export function validateUpdatePrecondition(
+    arg: string|number, precondition?: unknown): void {
+  if (precondition !== undefined) {
+    validatePrecondition(arg, precondition, /* allowExists= */ false);
+  }
+}
+
+export function validateDeletePrecondition(
+    arg: string|number, precondition?: unknown): void {
+  if (precondition !== undefined) {
+    validatePrecondition(arg, precondition, /* allowExists= */ true);
+  }
+}
+
+/**
+ * Validates the use of 'options' as SetOptions and enforces that 'merge' is a
+ * boolean.
+ *
+ * @private
+ * @param options.merge - Whether set() should merge the provided data into an
+ * existing document.
+ * @param options.mergeFields - Whether set() should only merge the specified
+ * set of fields.
+ * @returns 'true' if the input is a valid SetOptions object.
+ */
+export function validateSetOptions(arg: string|number, val: unknown): void {
+  if (val === undefined) {
+    return;
+  }
+
+  if (typeof val !== 'object' || val === null) {
+    throw new Error(`${
+        createErrorDescription(arg, 'set() option')} Input is not an object.`);
+  }
+
+  const options = val as {[k: string]: unknown};
+
+  if (options.merge !== undefined && typeof options.merge !== 'boolean') {
+    throw new Error(`${
+        createErrorDescription(
+            arg, 'set() option')} "merge" is not a boolean.`);
+  }
+
+  if (options.mergeFields !== undefined) {
+    if (!Array.isArray(options.mergeFields)) {
+      throw new Error(`${
+          createErrorDescription(
+              arg, 'set() option')} "mergeFields" is not an array.`);
+    }
+
+    for (let i = 0; i < options.mergeFields.length; ++i) {
+      try {
+        validateFieldPath(i, options.mergeFields[i]);
+      } catch (err) {
+        throw new Error(`${
+            createErrorDescription(
+                arg,
+                'set() option')} "mergeFields" is not valid: ${err.message}`);
+      }
+    }
+  }
+
+  if (options.merge !== undefined && options.mergeFields !== undefined) {
+    throw new Error(`${
+        createErrorDescription(
+            arg,
+            'set() option')} You cannot specify both "merge" and "mergeFields".`);
+  }
+}
+
+
+
+/**
+ * Validates a JavaScript object for usage as a Firestore document.
+ *
+ * @private
+ * @param obj JavaScript object to validate.
+ * @param options Validation options
+ * @returns 'true' when the object is valid.
+ * @throws when the object is invalid.
+ */
+export function validateDocumentData(
+    arg: string|number, obj: unknown, allowDeletes: boolean): void {
+  if (!isPlainObject(obj)) {
+    throw new Error(customObjectMessage(arg, obj));
+  }
+
+  let isEmpty = true;
+
+  for (const prop in obj) {
+    if (obj.hasOwnProperty(prop)) {
+      isEmpty = false;
+      validateUserInput(
+          arg, obj[prop], 'Firestore document', {
+            allowEmpty: true,
+            allowDeletes: allowDeletes ? 'root' : 'none',
+            allowTransforms: true,
+          },
+          new FieldPath(prop));
+    }
+  }
+}
+
 /*!
  * Validates that the update data does not contain any ambiguous field
  * definitions (such as 'a.b' and 'a').
@@ -596,7 +735,7 @@ export class WriteBatch {
  * @param data An update map with field/value pairs.
  * @returns 'true' if the input is a valid update map.
  */
-export function validateUpdateMap(data: UpdateData): boolean {
+export function validateUpdate(arg: string|number, data: UpdateData): void {
   const fields: UserInput = [];
   data.forEach((value, key) => {
     fields.push(key);
@@ -606,9 +745,43 @@ export function validateUpdateMap(data: UpdateData): boolean {
 
   for (let i = 1; i < fields.length; ++i) {
     if (fields[i - 1].isPrefixOf(fields[i])) {
-      throw new Error(`Field "${fields[i - 1]}" was specified multiple times.`);
+      throw new Error(`${createErrorDescription(arg, 'update map')} Field "${
+          fields[i - 1]}" was specified multiple times.`);
+    }
+  }
+}
+
+
+/**
+ * Validates a JavaScript object for usage as a Firestore document.
+ *
+ * @private
+ * @param obj JavaScript object to validate.
+ * @param options Validation options
+ * @returns 'true' when the object is valid.
+ * @throws when the object is invalid.
+ */
+export function validateUpdateMap(arg: string|number, obj: unknown): void {
+  if (!isPlainObject(obj)) {
+    throw new Error(customObjectMessage(arg, obj));
+  }
+
+  let isEmpty = true;
+
+  for (const prop in obj) {
+    if (obj.hasOwnProperty(prop)) {
+      isEmpty = false;
+      validateUserInput(
+          arg, obj[prop], 'Firestore document', {
+            allowEmpty: false,
+            allowDeletes: 'root',
+            allowTransforms: true,
+          },
+          new FieldPath(prop));
     }
   }
 
-  return true;
+  if (isEmpty) {
+    throw new Error('At least one field must be updated.');
+  }
 }

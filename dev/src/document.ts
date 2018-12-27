@@ -19,14 +19,22 @@ const deepEqual = require('deep-equal');
 import * as is from 'is';
 
 import {google} from '../protos/firestore_proto_api';
-import {FieldTransform} from './field-value';
-import {FieldPath} from './path';
+import {DeleteTransform, FieldTransform} from './field-value';
+import {FieldPath, validateFieldPath} from './path';
 import {DocumentReference} from './reference';
 import {isPlainObject, Serializer} from './serializer';
 import {Timestamp} from './timestamp';
-import {AnyDuringMigration, AnyJs, ApiMapValue, DocumentData, UpdateData, UserInput} from './types';
+import {AnyJs, ApiMapValue, DocumentData, UpdateData, UserInput, ValidationOptions} from './types';
 
 import api = google.firestore.v1beta1;
+import {createErrorDescription, customObjectMessage,} from './validate';
+import {GeoPoint} from './geo-point';
+
+
+/*!
+ * The maximum depth of a Firestore object.
+ */
+const MAX_DEPTH = 20;
 
 /**
  * Returns a builder for DocumentSnapshot and QueryDocumentSnapshot instances.
@@ -90,7 +98,6 @@ export class DocumentSnapshot {
   private _ref: DocumentReference;
   private _fieldsProto: ApiMapValue|undefined;
   private _serializer: Serializer;
-  private _validator: AnyDuringMigration;
   private _readTime: Timestamp|undefined;
   private _createTime: Timestamp|undefined;
   private _updateTime: Timestamp|undefined;
@@ -114,8 +121,7 @@ export class DocumentSnapshot {
       createTime?: Timestamp, updateTime?: Timestamp) {
     this._ref = ref;
     this._fieldsProto = fieldsProto;
-    this._serializer = ref.firestore._serializer;
-    this._validator = ref.firestore._validator;
+    this._serializer = ref.firestore._serializer!;
     this._readTime = readTime;
     this._createTime = createTime;
     this._updateTime = updateTime;
@@ -130,7 +136,7 @@ export class DocumentSnapshot {
    * @return The created DocumentSnapshot.
    */
   static fromObject(ref: DocumentReference, obj: {}): DocumentSnapshot {
-    const serializer = ref.firestore._serializer;
+    const serializer = ref.firestore._serializer!;
     return new DocumentSnapshot(ref, serializer.encodeFields(obj));
   }
   /**
@@ -146,7 +152,7 @@ export class DocumentSnapshot {
    */
   static fromUpdateMap(ref: DocumentReference, data: UpdateData):
       DocumentSnapshot {
-    const serializer = ref.firestore._serializer;
+    const serializer = ref.firestore._serializer!;
 
     /**
      * Merges 'value' at the field path specified by the path array into
@@ -384,7 +390,7 @@ export class DocumentSnapshot {
    * });
    */
   get(field: string|FieldPath): UserInput {
-    this._validator.isFieldPath('field', field);
+    validateFieldPath('field', field);
 
     const protoField = this.protoField(field);
 
@@ -824,7 +830,6 @@ export class DocumentMask {
  */
 export class DocumentTransform {
   private readonly _ref: DocumentReference;
-  private readonly _validator: AnyDuringMigration;
   private readonly _transforms: Map<FieldPath, FieldTransform>;
   /**
    * @private
@@ -835,7 +840,6 @@ export class DocumentTransform {
    */
   constructor(ref: DocumentReference, transforms) {
     this._ref = ref;
-    this._validator = ref.firestore._validator;
     this._transforms = transforms;
   }
   /**
@@ -921,7 +925,7 @@ export class DocumentTransform {
 
   /** Validates the user provided field values in this document transform. */
   validate(): void {
-    this._transforms.forEach(transform => transform.validate(this._validator));
+    this._transforms.forEach(transform => transform.validate());
   }
 
   /**
@@ -1011,89 +1015,102 @@ export class Precondition {
   }
 }
 
-/**
- * Validates the use of 'options' as a Precondition and enforces that 'exists'
- * and 'lastUpdateTime' use valid types.
- *
- * @private
- * @param options.exists Whether the referenced document should exist.
- * @param options.lastUpdateTime The last update time of the referenced
- * document in Firestore.
- * @param allowExist Whether to allow the 'exists' preconditions.
- * @returns 'true' if the input is a valid Precondition.
- */
-export function validatePrecondition(
-    precondition: {exists?: boolean, lastUpdateTime?: Timestamp},
-    allowExist: boolean): boolean {
-  if (!is.object(precondition)) {
-    throw new Error('Input is not an object.');
-  }
-
-  let conditions = 0;
-
-  if (precondition.exists !== undefined) {
-    ++conditions;
-    if (!allowExist) {
-      throw new Error('"exists" is not an allowed condition.');
-    }
-    if (!is.boolean(precondition.exists)) {
-      throw new Error('"exists" is not a boolean.');
-    }
-  }
-
-  if (precondition.lastUpdateTime !== undefined) {
-    ++conditions;
-    if (!(precondition.lastUpdateTime instanceof Timestamp)) {
-      throw new Error('"lastUpdateTime" is not a Firestore Timestamp.');
-    }
-  }
-
-  if (conditions > 1) {
-    throw new Error('Input contains more than one condition.');
-  }
-
-  return true;
-}
 
 /**
- * Validates the use of 'options' as SetOptions and enforces that 'merge' is a
- * boolean.
+ * Validates a JavaScript value for usage as a Firestore value.
  *
  * @private
- * @param options.merge - Whether set() should merge the provided data into an
- * existing document.
- * @param options.mergeFields - Whether set() should only merge the specified
- * set of fields.
- * @returns 'true' if the input is a valid SetOptions object.
+ * @param val JavaScript value to validate.
+ * @param path The field path to validate.
+ * @param options Validation options
+ * @param level The current depth of the traversal. This is used to decide
+ * whether deletes are allowed in conjunction with `allowDeletes: root`.
+ * @param inArray Whether we are inside an array.
+ * @returns 'true' when the object is valid.
+ * @throws when the object is invalid.
  */
-export function validateSetOptions(
-    options: {merge?: boolean, mergeFields?: string[]}): boolean {
-  if (!is.object(options)) {
-    throw new Error('Input is not an object.');
+export function validateUserInput(
+    argumentName: string|number, val: unknown, desc: string,
+    options: ValidationOptions, path?: FieldPath, level?: number,
+    inArray?: boolean): void {
+  if (path && path.size > MAX_DEPTH) {
+    throw new Error(`${
+        createErrorDescription(
+            argumentName, desc)} Input object is deeper than ${
+        MAX_DEPTH} levels or contains a cycle.`);
   }
 
-  if (options.merge !== undefined && !is.boolean(options.merge)) {
-    throw new Error('"merge" is not a boolean.');
-  }
+  options = options || {};
+  level = level || 0;
+  inArray = inArray || false;
 
-  if (options.mergeFields !== undefined) {
-    if (!is.array(options.mergeFields)) {
-      throw new Error('"mergeFields" is not an array.');
+  const fieldPathMessage = path ? ` (found in field ${path.toString()})` : '';
+
+  if (Array.isArray(val)) {
+    const arr = val as unknown[];
+    for (let i = 0; i < arr.length; ++i) {
+      validateUserInput(
+          argumentName, arr[i]!, desc, options,
+          path ? path.append(String(i)) : new FieldPath(String(i)), level + 1,
+          /* inArray= */ true);
     }
-
-    for (let i = 0; i < options.mergeFields.length; ++i) {
-      try {
-        FieldPath.validateFieldPath(options.mergeFields[i]);
-      } catch (err) {
-        throw new Error(
-            `Element at index ${i} is not a valid FieldPath. ${err.message}`);
+  } else if (isPlainObject(val)) {
+    const obj = val as object;
+    for (const prop in obj) {
+      if (obj.hasOwnProperty(prop)) {
+        validateUserInput(
+            argumentName, obj[prop]!, desc, options,
+            path ? path.append(new FieldPath(prop)) : new FieldPath(prop),
+            level + 1, inArray);
       }
     }
+  } else if (val === undefined) {
+    throw new Error(`${
+        createErrorDescription(
+            argumentName, desc)} Cannot use "undefined" as a Firestore value${
+        fieldPathMessage}.`);
+  } else if (val instanceof DeleteTransform) {
+    if (inArray) {
+      throw new Error(`${createErrorDescription(argumentName, desc)} ${
+          val.methodName}() cannot be used inside of an array${
+          fieldPathMessage}.`);
+    } else if (
+        (options.allowDeletes === 'root' && level !== 0) ||
+        options.allowDeletes === 'none') {
+      throw new Error(`${createErrorDescription(argumentName, desc)} ${
+          val.methodName}() must appear at the top-level and can only be used in update() or set() with {merge:true}${
+          fieldPathMessage}.`);
+    }
+  } else if (val instanceof FieldTransform) {
+    if (inArray) {
+      throw new Error(`${createErrorDescription(argumentName, desc)} ${
+          val.methodName}() cannot be used inside of an array${
+          fieldPathMessage}.`);
+    } else if (!options.allowTransforms) {
+      throw new Error(`${createErrorDescription(argumentName, desc)} ${
+          val.methodName}() can only be used in set(), create() or update()${
+          fieldPathMessage}.`);
+    }
+  } else if (val instanceof FieldPath) {
+    throw new Error(`${
+        createErrorDescription(
+            argumentName,
+            desc)} Cannot use object of type "FieldPath" as a Firestore value${
+        fieldPathMessage}.`);
+  } else if (val instanceof DocumentReference) {
+    // Ok.
+  } else if (val instanceof GeoPoint) {
+    // Ok.
+  } else if (val instanceof Timestamp) {
+    // Ok.
+  } else if (is.object(val)) {
+    throw new Error(customObjectMessage(argumentName, val, path));
   }
+}
 
-  if (options.merge !== undefined && options.mergeFields !== undefined) {
-    throw new Error('You cannot specify both "merge" and "mergeFields".');
-  }
-
-  return true;
+export function validateFieldValue(
+    arg: string|number, val: unknown, path?: FieldPath): void {
+  validateUserInput(
+      arg, val, 'Firestore value',
+      {allowEmpty: true, allowDeletes: 'root', allowTransforms: true}, path);
 }

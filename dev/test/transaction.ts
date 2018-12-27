@@ -325,7 +325,7 @@ describe('failed transactions', () => {
           () => firestore.runTransaction(
               () => Promise.resolve(), {maxAttempts: 0}))
           .to.throw(
-              'Argument "transactionOptions.maxAttempts" is not a valid integer.');
+              'Value for argument "transactionOptions.maxAttempts" must be within [1, Infinity] inclusive, but was: 0');
     });
   });
 

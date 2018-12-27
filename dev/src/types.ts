@@ -167,13 +167,13 @@ export interface ReadOptions {
  */
 export interface ValidationOptions {
   /** At what level field deletes are supported. */
-  allowDeletes?: 'none'|'root'|'all';
+  allowDeletes: 'none'|'root'|'all';
 
   /** Whether server transforms are supported. */
-  allowTransforms?: boolean;
+  allowTransforms: boolean;
 
   /** Whether empty documents are supported. */
-  allowEmpty?: boolean;
+  allowEmpty: boolean;
 }
 
 /**

@@ -15,9 +15,8 @@
  */
 
 import * as is from 'is';
-
 import {FieldPath} from './path';
-import {AnyDuringMigration} from './types';
+
 
 /**
  * Formats the given word as plural conditionally given the preceding number.
@@ -28,11 +27,10 @@ function formatPlural(num, str) {
   return `${num} ${str}` + (num === 1 ? '' : 's');
 }
 
-type Validators = {
-  [k: string]: () => boolean
-};
+
 
 /**
+ *
  * Provides argument validation for the Firestore Public API. Exposes validators
  * for strings, integers, numbers, objects and functions by default and can be
  * extended to provide custom validators.
@@ -47,76 +45,109 @@ type Validators = {
  *
  * @private
  */
-export class Validator {
-  /**
-   * Create a new Validator, optionally registering the custom validators as
-   * provided.
-   *
-   * @param customValidators A list of custom validators to register.
-   */
-  constructor(customValidators?: Validators) {
-    const validators = Object.assign(
-        {
-          function: is.function,
-          integer: (value, min, max) => {
-            min = is.defined(min) ? min : -Infinity;
-            max = is.defined(max) ? max : Infinity;
-            if (!is.integer(value)) {
-              return false;
-            }
-            if (value < min || value > max) {
-              throw new Error(`Value must be within [${min}, ${
-                  max}] inclusive, but was: ${value}`);
-            }
-            return true;
-          },
-          number: (value, min, max) => {
-            min = is.defined(min) ? min : -Infinity;
-            max = is.defined(max) ? max : Infinity;
-            if (!is.number(value) || is.nan(value)) {
-              return false;
-            }
-            if (value < min || value > max) {
-              throw new Error(`Value must be within [${min}, ${
-                  max}] inclusive, but was: ${value}`);
-            }
-            return true;
-          },
-          object: is.object,
-          string: is.string,
-          boolean: is.boolean
-        },
-        customValidators);
 
-    const register = type => {
-      const camelCase = type.substring(0, 1).toUpperCase() + type.substring(1);
-      this[`is${camelCase}`] = (argumentName, ...values) => {
-        let valid = false;
-        let message = is.number(argumentName) ?
-            `Argument at index ${argumentName} is not a valid ${type}.` :
-            `Argument "${argumentName}" is not a valid ${type}.`;
+export interface AllowOptional {
+  optional?: boolean;
+}
 
-        try {
-          // tslint:disable-next-line no-any
-          valid = (validators[type] as any).call(null, ...values);
-        } catch (err) {
-          message += ` ${err.message}`;
-        }
+export interface AllowValueRange {
+  minValue?: number;
+  maxValue?: number;
+}
 
-        if (valid !== true) {
-          throw new Error(message);
-        }
-      };
-      this[`isOptional${camelCase}`] = function(argumentName, value) {
-        if (is.defined(value)) {
-          this[`is${camelCase}`].apply(null, arguments);
-        }
-      };
-    };
+export interface AllowValues {
+  values: string[];
+}
 
-    for (const type in validators) {
-      if (validators.hasOwnProperty(type)) {
-        register(type);
+function formatArgumentName(arg: string|number) {
+  return typeof arg === 'string' ? `"${arg}"` : `at index ${arg}`;
+}
+
+export function createErrorDescription(
+    arg: string|number, expectedType: string) {
+  return `Argument ${formatArgumentName(arg)} is not a valid ${expectedType}.`;
+}
+
+function isOptional(value: unknown, options?: AllowOptional): boolean {
+  return value === undefined && options !== undefined &&
+      options.optional === true;
+}
+
+export function validateFunction(
+    arg: string|number, value: unknown, options?: AllowOptional): void {
+  if (!isOptional(value, options)) {
+  if (!is.function(value))
+      { throw new Error(createErrorDescription(arg, 'function')); }
+  }
+  }
+
+  export function validateObject(
+      arg: string|number, value: unknown, options?: AllowOptional): void {
+    if (!isOptional(value, options)) {
+      if (!is.object(value)) {
+        throw new Error(createErrorDescription(arg, 'object'));
+      }
+    }
+  }
+
+  export function validateString(
+      arg: string|number, value: unknown, options?: AllowOptional): void {
+    if (!isOptional(value, options)) {
+      if (typeof value !== 'string') {
+        throw new Error(createErrorDescription(arg, 'string'));
+      }
+    }
+  }
+
+  export function validateBoolean(
+      arg: string|number, value: unknown, options?: AllowOptional): void {
+    if (!isOptional(value, options)) {
+      if (typeof value !== 'boolean') {
+        throw new Error(createErrorDescription(arg, 'boolean'));
+      }
+    }
+  }
+
+  export function validateNumber(
+      arg: string|number, value: unknown,
+      options?: AllowOptional&AllowValueRange): void {
+    const min = options !== undefined && options.minValue !== undefined ?
+        options.minValue :
+        -Infinity;
+    const max = options !== undefined && options.maxValue !== undefined ?
+        options.maxValue :
+        -Infinity;
+
+    if (!isOptional(value, options)) {
+      if (typeof value !== 'number' || is.nan(value)) {
+        throw new Error(createErrorDescription(arg, 'number'));
+      }
+      if (value < min || value > max) {
+        throw new Error(
+            `Value for argument ${formatArgumentName(arg)} must be within [${
+                min}, ${max}] inclusive, but was: ${value}`);
+      }
+    }
+  }
+
+  export function validateInteger(
+      arg: string|number, value: unknown,
+      options?: AllowOptional&AllowValueRange): void {
+    const min = options !== undefined && options.minValue !== undefined ?
+        options.minValue :
+        -Infinity;
+    const max = options !== undefined && options.maxValue !== undefined ?
+        options.maxValue :
+        Infinity;
+
+    if (!isOptional(value, options)) {
+      if (typeof value !== 'number' || !is.integer(value)) {
+        throw new Error(createErrorDescription(arg, 'integer'));
+      }
+      if (value < min || value > max) {
+        throw new Error(
+            `Value for argument ${formatArgumentName(arg)} must be within [${
+                min}, ${max}] inclusive, but was: ${value}`);
       }
     }
   }
@@ -130,14 +161,12 @@ export class Validator {
    * @throws if the expectation is not met.
    * @returns {boolean} 'true' when the minimum number of elements is available.
    */
-  minNumberOfArguments(funcName, args, minSize): boolean {
+  export function validateMinNumberOfArguments(funcName, args, minSize): void {
     if (args.length < minSize) {
       throw new Error(
           `Function "${funcName}()" requires at least ` +
           `${formatPlural(minSize, 'argument')}.`);
     }
-
-    return true;
   }
 
   /**
@@ -150,58 +179,79 @@ export class Validator {
    * @returns {boolean} 'true' when only the maximum number of elements is
    * specified.
    */
-  maxNumberOfArguments(funcName, args, maxSize): boolean {
+  export function validateMaxNumberOfArguments(funcName, args, maxSize): void {
     if (args.length > maxSize) {
       throw new Error(
           `Function "${funcName}()" accepts at most ` +
           `${formatPlural(maxSize, 'argument')}.`);
     }
-
-    return true;
   }
-}
 
-export function customObjectError(val, path?: FieldPath): Error {
-  const fieldPathMessage = path ? ` (found in field ${path.toString()})` : '';
 
-  if (is.object(val) && val.constructor.name !== 'Object') {
-    const typeName = val.constructor.name;
-    switch (typeName) {
-      case 'DocumentReference':
-      case 'FieldPath':
-      case 'FieldValue':
-      case 'GeoPoint':
-      case 'Timestamp':
-        return new Error(
-            `Detected an object of type "${typeName}" that doesn't match the ` +
-            `expected instance${fieldPathMessage}. Please ensure that the ` +
-            'Firestore types you are using are from the same NPM package.');
-      default:
-        return new Error(
-            `Couldn't serialize object of type "${typeName}"${
-                fieldPathMessage}. Firestore doesn't support JavaScript ` +
-            'objects with custom prototypes (i.e. objects that were created ' +
-            'via the "new" operator).');
+
+  /**
+   * Validates that the provided named option equals one of the expected values.
+   */
+  export function validatePropertyValue(
+      arg: string|number, val: unknown, values: string[],
+      options?: AllowOptional): void {
+    if (!isOptional(val, options)) {
+      const expectedDescription: string[] = [];
+
+      for (const allowed of values) {
+        if (allowed === val) {
+          return;
+        }
+        expectedDescription.push(allowed);
+      }
+
+      throw new Error(`Invalid value for argument ${
+          formatArgumentName(
+              arg)}. Acceptable values are: ${expectedDescription.join(', ')}`);
     }
-  } else if (!is.object(val)) {
-    throw new Error(
-        `Input is not a plain JavaScript object${fieldPathMessage}.`);
-  } else {
-    return new Error(`Invalid use of type "${
-        typeof val}" as a Firestore argument${fieldPathMessage}.`);
   }
-}
 
-/**
- * Create a new Validator, optionally registering the custom validators as
- * provided.
- *
- * @private
- * @param customValidators A list of custom validators to register.
- */
-export function createValidator(customValidators?: Validators):
-    AnyDuringMigration {
-  // This function exists to change the type of `Validator` to `any` so that
-  // consumers can call the custom validator functions.
-  return new Validator(customValidators);
-}
+
+
+  export function customObjectMessage(
+      argumentName: string|number, val, path?: FieldPath): string {
+    const fieldPathMessage = path ? ` (found in field ${path.toString()})` : '';
+
+    if (is.object(val) && val.constructor.name !== 'Object') {
+      const typeName = val.constructor.name;
+      switch (typeName) {
+        case 'DocumentReference':
+        case 'FieldPath':
+        case 'FieldValue':
+        case 'GeoPoint':
+        case 'Timestamp':
+          return `${
+                     createErrorDescription(
+                         argumentName,
+                         'Firestore document')} Detected an object of type "${
+                     typeName}" that doesn't match the ` +
+              `expected instance${fieldPathMessage}. Please ensure that the ` +
+              'Firestore types you are using are from the same NPM package.)';
+        default:
+          return `${
+                     createErrorDescription(
+                         argumentName,
+                         'Firestore document')} Couldn't serialize object of type "${
+                     typeName}"${
+                     fieldPathMessage}. Firestore doesn't support JavaScript ` +
+              'objects with custom prototypes (i.e. objects that were created ' +
+              'via the "new" operator).';
+      }
+    } else if (!is.object(val)) {
+      return `${
+          createErrorDescription(
+              argumentName,
+              'Firestore document')} Input is not a plain JavaScript object${
+          fieldPathMessage}.`;
+    } else {
+      return `${
+          createErrorDescription(
+              argumentName, 'Firestore document')} Invalid use of type "${
+          typeof val}" as a Firestore argument${fieldPathMessage}.`;
+    }
+  }

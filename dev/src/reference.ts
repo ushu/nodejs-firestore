@@ -25,15 +25,15 @@ import api = proto.google.firestore.v1beta1;
 
 import {compare} from './order';
 import {logger} from './logger';
-import {DocumentSnapshot, DocumentSnapshotBuilder, QueryDocumentSnapshot} from './document';
+import {DocumentSnapshot, DocumentSnapshotBuilder, QueryDocumentSnapshot, validateUserInput} from './document';
 import {DocumentChange} from './document-change';
 import {Watch} from './watch';
-import {WriteBatch, WriteResult} from './write-batch';
+import {validateDocumentData, WriteBatch, WriteResult} from './write-batch';
 import {Timestamp} from './timestamp';
-import {FieldPath, ResourcePath} from './path';
+import {FieldPath, ResourcePath, validateFieldPath, validateResourcePath} from './path';
 import {autoId, requestTag} from './util';
-import {customObjectError} from './validate';
-import {AnyDuringMigration, DocumentData, UpdateData, Precondition, SetOptions, UserInput} from './types';
+import {validateFunction, validateInteger, validateMinNumberOfArguments, validatePropertyValue, customObjectMessage, createErrorDescription} from './validate';
+import {DocumentData, UpdateData, Precondition, SetOptions, UserInput} from './types';
 import {Serializer} from './serializer';
 import {Firestore} from './index';
 
@@ -99,19 +99,15 @@ const comparisonOperators:
  * @class
  */
 export class DocumentReference {
-  private readonly _validator: AnyDuringMigration;
-
   /**
    * @private
    * @hideconstructor
    *
    * @param _firestore The Firestore Database client.
-   * @param _ref The Path of this reference.
+   * @param _path The Path of this reference.
    */
   constructor(
-      private readonly _firestore: Firestore, readonly _path: ResourcePath) {
-    this._validator = _firestore._validator;
-  }
+      private readonly _firestore: Firestore, readonly _path: ResourcePath) {}
 
   /**
    * The string representation of the DocumentReference's location.
@@ -139,7 +135,7 @@ export class DocumentReference {
    *   console.log(`Root location for document is ${firestore.formattedName}`);
    * });
    */
-  get firestore(): AnyDuringMigration {
+  get firestore(): Firestore {
     return this._firestore;
   }
 
@@ -234,7 +230,7 @@ export class DocumentReference {
    * console.log(`Path to subcollection: ${subcollection.path}`);
    */
   collection(collectionPath: string): CollectionReference {
-    this._validator.isResourcePath('collectionPath', collectionPath);
+    validateResourcePath('collectionPath', collectionPath);
 
     const path = this._path.append(collectionPath);
     if (!path.isCollection) {
@@ -342,7 +338,7 @@ export class DocumentReference {
    */
   delete(precondition?: Precondition): Promise<WriteResult> {
     const writeBatch = new WriteBatch(this._firestore);
-    return writeBatch.delete(this, precondition as AnyDuringMigration)
+    return writeBatch.delete(this, precondition)
         .commit()
         .then(([writeResult]) => writeResult);
   }
@@ -410,7 +406,7 @@ export class DocumentReference {
       dataOrField: (UpdateData|string|FieldPath),
       ...preconditionOrValues: Array<UserInput|string|FieldPath|Precondition>):
       Promise<WriteResult> {
-    this._validator.minNumberOfArguments('update', arguments, 1);
+    validateMinNumberOfArguments('update', arguments, 1);
 
     const writeBatch = new WriteBatch(this._firestore);
     return writeBatch
@@ -453,8 +449,8 @@ export class DocumentReference {
   onSnapshot(
       onNext: (snapshot: DocumentSnapshot) => void,
       onError?: (error: Error) => void): () => void {
-    this._validator.isFunction('onNext', onNext);
-    this._validator.isOptionalFunction('onError', onError);
+    validateFunction('onNext', onNext);
+    validateFunction('onError', onError, {optional: true});
 
     const watch = Watch.forDocument(this);
 
@@ -618,7 +614,6 @@ class FieldFilter {
  * @class QuerySnapshot
  */
 export class QuerySnapshot {
-  private readonly _validator: AnyDuringMigration;
   private _materializedDocs: QueryDocumentSnapshot[]|null = null;
   private _materializedChanges: DocumentChange[]|null = null;
   private _docs: (() => QueryDocumentSnapshot[])|null = null;
@@ -640,7 +635,6 @@ export class QuerySnapshot {
       private readonly _query: Query, private readonly _readTime: Timestamp,
       private readonly _size: number, docs: () => QueryDocumentSnapshot[],
       changes: () => DocumentChange[]) {
-    this._validator = _query.firestore._validator;
     this._docs = docs;
     this._changes = changes;
   }
@@ -798,7 +792,7 @@ export class QuerySnapshot {
   // tslint:disable-next-line:no-any
   forEach(callback: (result: QueryDocumentSnapshot) => void, thisArg?: any):
       void {
-    this._validator.isFunction('callback', callback);
+    validateFunction('callback', callback);
 
     for (const doc of this.docs) {
       callback.call(thisArg, doc);
@@ -887,7 +881,6 @@ interface QueryOptions {
  * @class Query
  */
 export class Query {
-  readonly _validator: AnyDuringMigration;
   private readonly _serializer: Serializer;
 
   /**
@@ -906,7 +899,6 @@ export class Query {
       private readonly _fieldFilters: FieldFilter[] = [],
       private readonly _fieldOrders: FieldOrder[] = [],
       private readonly _queryOptions: QueryOptions = {}) {
-    this._validator = _firestore._validator;
     this._serializer = new Serializer(_firestore);
   }
 
@@ -984,7 +976,7 @@ export class Query {
    *   console.log(`Root location for document is ${firestore.formattedName}`);
    * });
    */
-  get firestore(): AnyDuringMigration {
+  get firestore(): Firestore {
     return this._firestore;
   }
 
@@ -1015,12 +1007,9 @@ export class Query {
    * });
    */
   where(fieldPath: string|FieldPath, opStr: string, value: UserInput): Query {
-    this._validator.isFieldPath('fieldPath', fieldPath);
-    this._validator.isQueryComparison('opStr', opStr, value);
-    this._validator.isQueryValue('value', value, {
-      allowDeletes: 'none',
-      allowTransforms: false,
-    });
+    validateFieldPath('fieldPath', fieldPath);
+    validateQueryOperator('opStr', opStr, value);
+    validateQueryValue('value', value);
 
     if (this._queryOptions.startAt || this._queryOptions.endAt) {
       throw new Error(
@@ -1071,7 +1060,7 @@ export class Query {
       fields.push({fieldPath: FieldPath.documentId().formattedName});
     } else {
       for (let i = 0; i < fieldPaths.length; ++i) {
-        this._validator.isFieldPath(i, fieldPaths[i]);
+        validateFieldPath(i, fieldPaths[i]);
         fields.push(
             {fieldPath: FieldPath.fromArgument(fieldPaths[i]).formattedName});
       }
@@ -1108,8 +1097,8 @@ export class Query {
    * });
    */
   orderBy(fieldPath: string|FieldPath, directionStr?: string): Query {
-    this._validator.isFieldPath('fieldPath', fieldPath);
-    this._validator.isOptionalFieldOrder('directionStr', directionStr);
+    validateFieldPath('fieldPath', fieldPath);
+    validateQueryOrder('directionStr', directionStr);
 
     if (this._queryOptions.startAt || this._queryOptions.endAt) {
       throw new Error(
@@ -1146,7 +1135,7 @@ export class Query {
    * });
    */
   limit(limit: number): Query {
-    this._validator.isInteger('limit', limit);
+    validateInteger('limit', limit);
 
     const options = extend(true, {}, this._queryOptions);
     options.limit = limit;
@@ -1175,7 +1164,7 @@ export class Query {
    * });
    */
   offset(offset: number): Query {
-    this._validator.isInteger('offset', offset);
+    validateInteger('offset', offset);
 
     const options = extend(true, {}, this._queryOptions);
     options.offset = offset;
@@ -1295,11 +1284,7 @@ export class Query {
         fieldValue = this.convertReference(fieldValue);
       }
 
-      this._validator.isQueryValue(i, fieldValue, {
-        allowDeletes: 'none',
-        allowTransforms: false,
-      });
-
+      validateQueryValue(i, fieldValue);
       options.values!.push(this._serializer.encodeValue(fieldValue)!);
     }
 
@@ -1364,7 +1349,7 @@ export class Query {
    */
   startAt(...fieldValuesOrDocumentSnapshot: Array<DocumentSnapshot|UserInput>):
       Query {
-    this._validator.minNumberOfArguments('startAt', arguments, 1);
+    validateMinNumberOfArguments('startAt', arguments, 1);
 
     const options = extend(true, {}, this._queryOptions);
 
@@ -1399,7 +1384,7 @@ export class Query {
    */
   startAfter(...fieldValuesOrDocumentSnapshot:
                  Array<DocumentSnapshot|UserInput>): Query {
-    this._validator.minNumberOfArguments('startAfter', arguments, 1);
+    validateMinNumberOfArguments('startAfter', arguments, 1);
 
     const options = extend(true, {}, this._queryOptions);
 
@@ -1433,7 +1418,7 @@ export class Query {
    */
   endBefore(...fieldValuesOrDocumentSnapshot:
                 Array<DocumentSnapshot|UserInput>): Query {
-    this._validator.minNumberOfArguments('endBefore', arguments, 1);
+    validateMinNumberOfArguments('endBefore', arguments, 1);
 
     const options = extend(true, {}, this._queryOptions);
 
@@ -1467,7 +1452,7 @@ export class Query {
    */
   endAt(...fieldValuesOrDocumentSnapshot: Array<DocumentSnapshot|UserInput>):
       Query {
-    this._validator.minNumberOfArguments('endAt', arguments, 1);
+    validateMinNumberOfArguments('endAt', arguments, 1);
 
     const options = extend(true, {}, this._queryOptions);
 
@@ -1561,8 +1546,7 @@ export class Query {
   stream(): NodeJS.ReadableStream {
     const responseStream = this._stream();
 
-    const transform = through2.obj(function(
-        this: AnyDuringMigration, chunk, encoding, callback) {
+    const transform = through2.obj(function(this, chunk, encoding, callback) {
       // Only send chunks with documents.
       if (chunk.document) {
         this.push(chunk.document);
@@ -1644,18 +1628,17 @@ export class Query {
     const tag = requestTag();
     const self = this;
 
-    const stream =
-        through2.obj(function(this: AnyDuringMigration, proto, enc, callback) {
-          const readTime = Timestamp.fromProto(proto.readTime);
-          if (proto.document) {
-            const document =
-                self.firestore.snapshot_(proto.document, proto.readTime);
-            this.push({document, readTime});
-          } else {
-            this.push({readTime});
-          }
-          callback();
-        });
+    const stream = through2.obj(function(this, proto, enc, callback) {
+      const readTime = Timestamp.fromProto(proto.readTime);
+      if (proto.document) {
+        const document =
+            self.firestore.snapshot_(proto.document, proto.readTime);
+        this.push({document, readTime});
+      } else {
+        this.push({readTime});
+      }
+      callback();
+    });
 
     this._firestore.readStream('runQuery', request, tag, true)
         .then(backendStream => {
@@ -1700,8 +1683,8 @@ export class Query {
   onSnapshot(
       onNext: (snapshot: QuerySnapshot) => void,
       onError?: (error: Error) => void): () => void {
-    this._validator.isFunction('onNext', onNext);
-    this._validator.isOptionalFunction('onError', onError);
+    validateFunction('onNext', onNext);
+    validateFunction('onError', onError, {optional: true});
 
     const watch = Watch.forQuery(this);
 
@@ -1751,6 +1734,58 @@ export class Query {
 
       return 0;
     };
+  }
+}
+
+/*!
+ * Validates the input string as a field order direction.
+ *
+ * @param {string=} str Order direction to validate.
+ * @throws {Error} when the direction is invalid
+ */
+export function validateQueryOrder(
+    argumentName: string|number, op: unknown): void {
+  validatePropertyValue(
+      argumentName, op, Object.keys(directionOperators), {optional: true});
+}
+
+/*!
+ * Validates the input string as a field comparison operator.
+ *
+ * @param {string} str Field comparison operator to validate.
+ * @param {*} val Value that is used in the filter.
+ * @throws {Error} when the comparison operation is invalid
+ */
+export function validateQueryOperator(
+    argumentName: string|number, val: unknown, fieldValue: unknown): void {
+  validatePropertyValue(argumentName, val, Object.keys(comparisonOperators));
+
+  const op = comparisonOperators[val as string];
+
+  if (typeof op === 'string') {
+    if (typeof fieldValue === 'number' && isNaN(fieldValue) && op !== 'EQUAL') {
+      throw new Error(
+          'Invalid query. You can only perform equals comparisons on NaN.');
+    }
+
+    if (fieldValue === null && op !== 'EQUAL') {
+      throw new Error(
+          'Invalid query. You can only perform equals comparisons on Null.');
+    }
+  }
+}
+
+
+/*!
+ * Validates that 'value' is a DocumentReference.
+ *
+ * @param {*} value The argument to validate.
+ * @returns 'true' is value is an instance of DocumentReference.
+ */
+export function validateDocumentReference(
+    arg: string|number, value: unknown): void {
+  if (!(value instanceof DocumentReference)) {
+    throw new Error(createErrorDescription(arg, 'DocumentReference'));
   }
 }
 
@@ -1857,8 +1892,10 @@ export class CollectionReference extends Query {
       mask: {fieldPaths: []}
     };
 
-    return this.firestore.request('listDocuments', request, requestTag())
-        .then((documents: api.IDocument[]) => {
+    return this.firestore
+        .request<api.IDocument[]>(
+            'listDocuments', request, requestTag(), /*allowRetries=*/true)
+        .then(documents => {
           // Note that the backend already orders these documents by name,
           // so we do not need to manually sort them.
           return documents.map(doc => {
@@ -1890,7 +1927,7 @@ export class CollectionReference extends Query {
     if (arguments.length === 0) {
       documentPath = autoId();
     } else {
-      this._validator.isResourcePath('documentPath', documentPath);
+      validateResourcePath('documentPath', documentPath!);
     }
 
     const path = this._path.append(documentPath!);
@@ -1919,11 +1956,7 @@ export class CollectionReference extends Query {
    * });
    */
   add(data: DocumentData): Promise<DocumentReference> {
-    this._validator.isDocument('data', data, {
-      allowEmpty: true,
-      allowDeletes: 'none',
-      allowTransforms: true,
-    });
+    validateDocumentData('data', data, /*allowDeletes=*/false);
 
     const documentRef = this.doc();
     return documentRef.create(data).then(() => documentRef);
@@ -1954,62 +1987,6 @@ function createCollectionReference(firestore, path): CollectionReference {
   return new CollectionReference(firestore, path);
 }
 
-/*!
- * Validates the input string as a field order direction.
- *
- * @param {string=} str Order direction to validate.
- * @throws {Error} when the direction is invalid
- */
-export function validateFieldOrder(str: string): boolean {
-  if (!is.string(str) || !is.defined(directionOperators[str])) {
-    throw new Error('Order must be one of "asc" or "desc".');
-  }
-
-  return true;
-}
-
-/*!
- * Validates the input string as a field comparison operator.
- *
- * @param {string} str Field comparison operator to validate.
- * @param {*} val Value that is used in the filter.
- * @throws {Error} when the comparison operation is invalid
- */
-export function validateComparisonOperator(
-    str: string, val: UserInput): boolean {
-  if (is.string(str) && comparisonOperators[str]) {
-    const op = comparisonOperators[str];
-
-    if (typeof val === 'number' && isNaN(val) && op !== 'EQUAL') {
-      throw new Error(
-          'Invalid query. You can only perform equals comparisons on NaN.');
-    }
-
-    if (val === null && op !== 'EQUAL') {
-      throw new Error(
-          'Invalid query. You can only perform equals comparisons on Null.');
-    }
-
-    return true;
-  }
-
-  throw new Error(
-      'Operator must be one of "<", "<=", "==", ">", ">=" or "array-contains".');
-}
-
-/*!
- * Validates that 'value' is a DocumentReference.
- *
- * @param {*} value The argument to validate.
- * @returns 'true' is value is an instance of DocumentReference.
- */
-export function validateDocumentReference(value: DocumentReference): boolean {
-  if (value instanceof DocumentReference) {
-    return true;
-  }
-  throw customObjectError(value);
-}
-
 /**
  * Verifies euqality for an array of objects using the `isEqual` interface.
  *
@@ -2031,4 +2008,11 @@ function isArrayEqual<T extends {isEqual: (t: T) => boolean}>(
   }
 
   return true;
+}
+
+
+function validateQueryValue(arg: string|number, val: unknown): void {
+  validateUserInput(
+      arg, val, 'query constraint',
+      {allowEmpty: true, allowDeletes: 'none', allowTransforms: false});
 }

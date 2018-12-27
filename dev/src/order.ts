@@ -19,7 +19,7 @@ import api = google.firestore.v1beta1;
 
 import {detectValueType} from './convert';
 import {ResourcePath} from './path';
-import {customObjectError} from './validate';
+import {customObjectMessage} from './validate';
 import {ApiMapValue} from './types';
 
 /*!
@@ -68,7 +68,7 @@ function typeOrder(val: api.IValue): TypeOrder {
     case 'mapValue':
       return TypeOrder.OBJECT;
     default:
-      throw customObjectError(val);
+      throw new Error('Unexpected value type: ' + valueType);
   }
 }
 

@@ -22,24 +22,23 @@ import * as is from 'is';
 import * as through2 from 'through2';
 import {google} from '../protos/firestore_proto_api';
 import * as convert from './convert';
-import {DocumentSnapshot, DocumentSnapshotBuilder, validatePrecondition, validateSetOptions} from './document';
+import {DocumentSnapshot, DocumentSnapshotBuilder} from './document';
 import {DeleteTransform, FieldTransform} from './field-value';
 import {GeoPoint} from './geo-point';
 import {logger, setLibVersion} from './logger';
-import {FieldPath} from './path';
+import {FieldPath, validateResourcePath} from './path';
 import {ResourcePath} from './path';
 import {ClientPool} from './pool';
-import {CollectionReference, validateComparisonOperator, validateDocumentReference, validateFieldOrder} from './reference';
+import {CollectionReference} from './reference';
 import {DocumentReference} from './reference';
-import {isPlainObject, Serializer} from './serializer';
+import {Serializer} from './serializer';
 import {Timestamp} from './timestamp';
 import {Transaction} from './transaction';
 import {DocumentData, GapicClient, ReadOptions, Settings, ValidationOptions} from './types';
-import {AnyDuringMigration, AnyJs} from './types';
 import {parseGetAllArguments, requestTag} from './util';
-import {customObjectError, Validator} from './validate';
+import {customObjectMessage, validateBoolean, validateFunction, validateInteger, validateMinNumberOfArguments, validateObject, validateString,} from './validate';
 import {WriteBatch} from './write-batch';
-import {validateUpdateMap} from './write-batch';
+import {validateUpdate} from './write-batch';
 
 import api = google.firestore.v1beta1;
 
@@ -102,11 +101,6 @@ const MAX_CONCURRENT_REQUESTS_PER_CLIENT = 100;
  * GRPC Error code for 'UNAVAILABLE'.
  */
 const GRPC_UNAVAILABLE = 14;
-
-/*!
- * The maximum depth of a Firestore object.
- */
-const MAX_DEPTH = 20;
 
 /**
  * Document data (e.g. for use with
@@ -236,7 +230,7 @@ export class Firestore {
    * The serializer to use for the Protobuf transformation.
    * @private
    */
-  private _serializer: Serializer|null = null;
+  _serializer: Serializer|null = null;
 
   private _referencePath: ResourcePath|null = null;
 
@@ -288,28 +282,6 @@ export class Firestore {
    * use `Timestamp` now and opt-in to this new behavior as soon as you can.
    */
   constructor(settings?: Settings) {
-    this._validator = new Validator({
-      ArrayElement: (name, value) => validateFieldValue(
-          name, value, /*path=*/undefined, /*level=*/0,
-          /*inArray=*/true),
-      DeletePrecondition: precondition =>
-          validatePrecondition(precondition, /* allowExists= */ true),
-      Document: validateDocumentData,
-      DocumentReference: validateDocumentReference,
-      FieldPath: FieldPath.validateFieldPath,
-      FieldValue: validateFieldValue,
-      FieldOrder: validateFieldOrder,
-      QueryComparison: validateComparisonOperator,
-      QueryValue: validateFieldValue,
-      ResourcePath: ResourcePath.validateResourcePath,
-      SetOptions: validateSetOptions,
-      ReadOptions: validateReadOptions,
-      UpdateMap: validateUpdateMap,
-      UpdatePrecondition: precondition =>
-          validatePrecondition(precondition, /* allowExists= */ false),
-    } as AnyDuringMigration);
-
-
     const libraryHeader = {
       libName: 'gccl',
       libVersion,
@@ -349,10 +321,11 @@ export class Firestore {
    * @param {object} settings The settings to use for all Firestore operations.
    */
   settings(settings: Settings): void {
-    this._validator.isObject('settings', settings);
-    this._validator.isOptionalString('settings.projectId', settings.projectId);
-    this._validator.isOptionalBoolean(
-        'settings.timestampsInSnapshots', settings.timestampsInSnapshots);
+    validateObject('settings', settings);
+    validateString('settings.projectId', settings.projectId, {optional: true});
+    validateBoolean(
+        'settings.timestampsInSnapshots', settings.timestampsInSnapshots,
+        {optional: true});
 
     if (this._clientInitialized) {
       throw new Error(
@@ -374,11 +347,12 @@ export class Firestore {
   }
 
   private validateAndApplySettings(settings: Settings): void {
-    this._validator.isOptionalBoolean(
-        'settings.timestampsInSnapshots', settings.timestampsInSnapshots);
+    validateBoolean(
+        'settings.timestampsInSnapshots', settings.timestampsInSnapshots,
+        {optional: true});
 
     if (settings && settings.projectId) {
-      this._validator.isString('settings.projectId', settings.projectId);
+      validateString('settings.projectId', settings.projectId);
       this._referencePath = new ResourcePath(settings.projectId, '(default)');
     } else {
       // Initialize a temporary reference path that will be overwritten during
@@ -412,7 +386,7 @@ export class Firestore {
    * console.log(`Path of document is ${documentRef.path}`);
    */
   doc(documentPath: string): DocumentReference {
-    this._validator.isResourcePath('documentPath', documentPath);
+    validateResourcePath('documentPath', documentPath);
 
     const path = this._referencePath!.append(documentPath);
     if (!path.isDocument) {
@@ -440,7 +414,7 @@ export class Firestore {
    * });
    */
   collection(collectionPath: string): CollectionReference {
-    this._validator.isResourcePath('collectionPath', collectionPath);
+    validateResourcePath('collectionPath', collectionPath);
 
     const path = this._referencePath!.append(collectionPath);
     if (!path.isCollection) {
@@ -493,7 +467,7 @@ export class Firestore {
    * @returns A QueryDocumentSnapshot for existing documents, otherwise a
    * DocumentSnapshot.
    */
-  private snapshot_(
+  snapshot_(
       documentOrName: api.IDocument|string,
       readTime?: google.protobuf.ITimestamp,
       encoding?: 'json'|'protobufJS'): DocumentSnapshot {
@@ -584,12 +558,13 @@ export class Firestore {
   runTransaction<T>(
       updateFunction: (transaction: Transaction) => Promise<T>,
       transactionOptions?: {maxAttempts?: number}): Promise<T> {
-    this._validator.isFunction('updateFunction', updateFunction);
+    validateFunction('updateFunction', updateFunction);
 
     if (transactionOptions) {
-      this._validator.isObject('transactionOptions', transactionOptions);
-      this._validator.isOptionalInteger(
-          'transactionOptions.maxAttempts', transactionOptions.maxAttempts, 1);
+      validateObject('transactionOptions', transactionOptions);
+      validateInteger(
+          'transactionOptions.maxAttempts', transactionOptions.maxAttempts,
+          {optional: true, minValue: 1});
     }
 
     return this._runTransaction(updateFunction, transactionOptions);
@@ -707,10 +682,10 @@ export class Firestore {
       documentRef: DocumentReference,
       ...moreDocumentRefsOrReadOptions: Array<DocumentReference|ReadOptions>):
       Promise<DocumentSnapshot[]> {
-    this._validator.minNumberOfArguments('Firestore.getAll', arguments, 1);
+    validateMinNumberOfArguments('Firestore.getAll', arguments, 1);
 
-    const {documents, fieldMask} = parseGetAllArguments(
-        this._validator, [documentRef, ...moreDocumentRefsOrReadOptions]);
+    const {documents, fieldMask} =
+        parseGetAllArguments([documentRef, ...moreDocumentRefsOrReadOptions]);
     return this.getAll_(documents, fieldMask, requestTag());
   }
 
@@ -1095,7 +1070,7 @@ follow these steps, YOUR APP MAY BREAK.`);
             'Firestore._initializeStream', requestTag, 'Sending request: %j',
             request);
         (resultStream as NodeJS.ReadWriteStream)
-            .write(request as AnyDuringMigration, 'utf-8', () => {
+            .write(request as string, 'utf-8', () => {
               logger(
                   'Firestore._initializeStream', requestTag,
                   'Marking stream as healthy');
@@ -1179,14 +1154,14 @@ follow these steps, YOUR APP MAY BREAK.`);
                        'Sending request: %j', decorated.request);
                    const stream = gapicClient[methodName](
                        decorated.request, decorated.gax);
-                   const logStream = through2.obj(function(
-                       this: AnyDuringMigration, chunk, enc, callback) {
-                     logger(
-                         'Firestore.readStream', requestTag,
-                         'Received response: %j', chunk);
-                     this.push(chunk);
-                     callback();
-                   });
+                   const logStream =
+                       through2.obj(function(this, chunk, enc, callback) {
+                         logger(
+                             'Firestore.readStream', requestTag,
+                             'Received response: %j', chunk);
+                         this.push(chunk);
+                         callback();
+                       });
                    resolve(bun([stream, logStream]));
                  } catch (err) {
                    logger(
@@ -1240,8 +1215,7 @@ follow these steps, YOUR APP MAY BREAK.`);
             requestStream.write(decoratedChunk, encoding, callback);
           });
 
-          const logStream = through2.obj(function(
-              this: AnyDuringMigration, chunk, enc, callback) {
+          const logStream = through2.obj(function(this, chunk, enc, callback) {
             logger(
                 'Firestore.readWriteStream', requestTag,
                 'Received response: %j', chunk);
@@ -1255,156 +1229,6 @@ follow these steps, YOUR APP MAY BREAK.`);
       });
     });
   }
-}
-
-/**
- * Validates a JavaScript value for usage as a Firestore value.
- *
- * @private
- * @param val JavaScript value to validate.
- * @param path The field path to validate.
- * @param options Validation options
- * @param level The current depth of the traversal. This is used to decide
- * whether deletes are allowed in conjunction with `allowDeletes: root`.
- * @param inArray Whether we are inside an array.
- * @returns 'true' when the object is valid.
- * @throws when the object is invalid.
- */
-function validateFieldValue(
-    val: AnyJs, options: ValidationOptions, path?: FieldPath, level?: number,
-    inArray?: boolean): boolean {
-  if (path && path.size > MAX_DEPTH) {
-    throw new Error(
-        `Input object is deeper than ${MAX_DEPTH} levels or contains a cycle.`);
-  }
-
-  level = level || 0;
-  inArray = inArray || false;
-
-  const fieldPathMessage = path ? ` (found in field ${path.toString()})` : '';
-
-  if (Array.isArray(val)) {
-    const arr = val as AnyDuringMigration[];
-    for (let i = 0; i < arr.length; ++i) {
-      validateFieldValue(
-          arr[i]!, options,
-          path ? path.append(String(i)) : new FieldPath(String(i)), level + 1,
-          /* inArray= */ true);
-    }
-  } else if (isPlainObject(val)) {
-    const obj = val as object;
-    for (const prop in obj) {
-      if (obj.hasOwnProperty(prop)) {
-        validateFieldValue(
-            obj[prop]!, options,
-            path ? path.append(new FieldPath(prop)) : new FieldPath(prop),
-            level + 1, inArray);
-      }
-    }
-  } else if (val === undefined) {
-    throw new Error(
-        `Cannot use "undefined" as a Firestore value${fieldPathMessage}.`);
-  } else if (val instanceof DeleteTransform) {
-    if (inArray) {
-      throw new Error(`${val.methodName}() cannot be used inside of an array${
-          fieldPathMessage}.`);
-    } else if (
-        (options.allowDeletes === 'root' && level !== 0) ||
-        options.allowDeletes === 'none') {
-      throw new Error(`${
-          val.methodName}() must appear at the top-level and can only be used in update() or set() with {merge:true}${
-          fieldPathMessage}.`);
-    }
-  } else if (val instanceof FieldTransform) {
-    if (inArray) {
-      throw new Error(`${val.methodName}() cannot be used inside of an array${
-          fieldPathMessage}.`);
-    } else if (!options.allowTransforms) {
-      throw new Error(
-          `${val.methodName}() can only be used in set(), create() or update()${
-              fieldPathMessage}.`);
-    }
-  } else if (val instanceof DocumentReference) {
-    return true;
-  } else if (val instanceof GeoPoint) {
-    return true;
-  } else if (val instanceof Timestamp) {
-    return true;
-  } else if (val instanceof FieldPath) {
-    throw new Error(
-        `Cannot use object of type "FieldPath" as a Firestore value${
-            fieldPathMessage}.`);
-  } else if (is.object(val)) {
-    throw customObjectError(val, path);
-  }
-
-  return true;
-}
-
-/**
- * Validates a JavaScript object for usage as a Firestore document.
- *
- * @private
- * @param obj JavaScript object to validate.
- * @param options Validation options
- * @returns 'true' when the object is valid.
- * @throws when the object is invalid.
- */
-function validateDocumentData(
-    obj: DocumentData, options: ValidationOptions): boolean {
-  if (!isPlainObject(obj)) {
-    throw customObjectError(obj);
-  }
-
-  options = options || {};
-
-  let isEmpty = true;
-
-  for (const prop in obj) {
-    if (obj.hasOwnProperty(prop)) {
-      isEmpty = false;
-      validateFieldValue(obj[prop], options, new FieldPath(prop));
-    }
-  }
-
-  if (options.allowEmpty === false && isEmpty) {
-    throw new Error('At least one field must be updated.');
-  }
-
-  return true;
-}
-
-/**
- * Validates the use of 'options' as ReadOptions and enforces that 'fieldMask'
- * is an array of strings or field paths.
- *
- * @private
- * @param options.fieldMask - The subset of fields to return from a read
- * operation.
- */
-export function validateReadOptions(options: ReadOptions): boolean {
-  if (!is.object(options)) {
-    throw new Error('Input is not an object.');
-  }
-
-  if (options.fieldMask === undefined) {
-    return true;
-  }
-
-  if (!Array.isArray(options.fieldMask)) {
-    throw new Error('"fieldMask" is not an array.');
-  }
-
-  for (let i = 0; i < options.fieldMask.length; ++i) {
-    try {
-      FieldPath.validateFieldPath(options.fieldMask[i]);
-    } catch (err) {
-      throw new Error(
-          `Element at index ${i} is not a valid FieldPath. ${err.message}`);
-    }
-  }
-
-  return true;
 }
 
 /**

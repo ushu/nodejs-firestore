@@ -22,10 +22,9 @@ import api = proto.google.firestore.v1beta1;
 import {Timestamp} from './timestamp';
 import {FieldTransform} from './field-value';
 
-import {customObjectError} from './validate';
 import {ResourcePath} from './path';
 import {detectValueType} from './convert';
-import {AnyDuringMigration, AnyJs, UserInput} from './types';
+import {AnyJs, UserInput} from './types';
 import {GeoPoint} from './geo-point';
 import {DocumentReference, Firestore} from './index';
 
@@ -176,7 +175,7 @@ export class Serializer {
       return map;
     }
 
-    throw customObjectError(val);
+    throw new Error(`Cannot encode value: ${val}`);
   }
 
   /**
@@ -259,7 +258,7 @@ export class Serializer {
  * @param input The argument to verify.
  * @returns 'true' if the input can be a treated as a plain object.
  */
-export function isPlainObject(input: UserInput): boolean {
+export function isPlainObject(input: UserInput): input is object {
   return (
       typeof input === 'object' && input !== null &&
       (Object.getPrototypeOf(input) === Object.prototype ||
