@@ -17,7 +17,6 @@
 import {expect} from 'chai';
 const duplexify = require('duplexify');
 
-import * as is from 'is';
 import * as path from 'path';
 import * as protobufjs from 'protobufjs';
 import * as through2 from 'through2';
@@ -93,9 +92,9 @@ const convertInput = {
   argument: json => {
     const obj = JSON.parse(json);
     function convertValue(value) {
-      if (is.object(value)) {
+      if (typeof value !== 'object' && value !== null) {
         return convertObject(value);
-      } else if (is.array(value)) {
+      } else if (Array.isArray(value)) {
         return convertArray(value);
       } else if (value === 'NaN') {
         return NaN;

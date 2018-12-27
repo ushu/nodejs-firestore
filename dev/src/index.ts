@@ -18,12 +18,10 @@ import {replaceProjectIdToken} from '@google-cloud/projectify';
 import * as assert from 'assert';
 import * as bun from 'bun';
 import * as extend from 'extend';
-import * as is from 'is';
 import * as through2 from 'through2';
 import {google} from '../protos/firestore_proto_api';
 import * as convert from './convert';
 import {DocumentSnapshot, DocumentSnapshotBuilder} from './document';
-import {DeleteTransform, FieldTransform} from './field-value';
 import {GeoPoint} from './geo-point';
 import {logger, setLibVersion} from './logger';
 import {FieldPath, validateResourcePath} from './path';
@@ -34,11 +32,10 @@ import {DocumentReference} from './reference';
 import {Serializer} from './serializer';
 import {Timestamp} from './timestamp';
 import {Transaction} from './transaction';
-import {DocumentData, GapicClient, ReadOptions, Settings, ValidationOptions} from './types';
+import {DocumentData, GapicClient, ReadOptions, Settings} from './types';
 import {parseGetAllArguments, requestTag} from './util';
-import {customObjectMessage, validateBoolean, validateFunction, validateInteger, validateMinNumberOfArguments, validateObject, validateString,} from './validate';
+import {validateBoolean, validateFunction, validateInteger, validateMinNumberOfArguments, validateObject, validateString,} from './validate';
 import {WriteBatch} from './write-batch';
-import {validateUpdate} from './write-batch';
 
 import api = google.firestore.v1beta1;
 
@@ -300,7 +297,7 @@ export class Firestore {
     //
     // The environment variable FUNCTION_TRIGGER_TYPE is used to detect the GCF
     // environment.
-    this._preferTransactions = is.defined(process.env.FUNCTION_TRIGGER_TYPE);
+    this._preferTransactions = process.env.FUNCTION_TRIGGER_TYPE !== undefined;
     this._lastSuccessfulRequest = 0;
 
     if (this._preferTransactions) {
@@ -476,7 +473,7 @@ export class Firestore {
     let convertTimestamp;
     let convertDocument;
 
-    if (!is.defined(encoding) || encoding === 'protobufJS') {
+    if (encoding === undefined || encoding === 'protobufJS') {
       convertTimestamp = data => data;
       convertDocument = data => data;
     } else if (encoding === 'json') {
@@ -773,7 +770,7 @@ export class Firestore {
                   const orderedDocuments: DocumentSnapshot[] = [];
                   for (const docRef of docRefs) {
                     const document = retrievedDocuments.get(docRef.path);
-                    if (!is.defined(document)) {
+                    if (document === undefined) {
                       reject(new Error(
                           `Did not receive document for "${docRef.path}".`));
                     }
@@ -944,7 +941,7 @@ follow these steps, YOUR APP MAY BREAK.`);
           return result;
         })
         .catch(err => {
-          if (is.defined(err.code) && err.code !== GRPC_UNAVAILABLE) {
+          if (err.code !== undefined && err.code !== GRPC_UNAVAILABLE) {
             logger(
                 'Firestore._retry', requestTag,
                 'Request failed with unrecoverable error:', err);

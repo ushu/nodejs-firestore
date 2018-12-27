@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-import * as is from 'is';
-
 import * as proto from '../protos/firestore_proto_api';
 import api = proto.google.firestore.v1beta1;
 
@@ -86,7 +84,7 @@ export class Serializer {
       return null;
     }
 
-    if (is.string(val)) {
+    if (typeof val === 'string') {
       return {
         stringValue: val as string,
       };
@@ -98,20 +96,20 @@ export class Serializer {
       };
     }
 
-    if (typeof val === 'number' && is.integer(val)) {
+    if (typeof val === 'number' && !isNaN(val)&& val % 1 === 0) {
       return {
         integerValue: val as number,
       };
     }
 
     // Integers are handled above, the remaining numbers are treated as doubles
-    if (is.number(val)) {
+    if (typeof val === 'number') {
       return {
         doubleValue: val as number,
       };
     }
 
-    if (is.date(val)) {
+    if (val instanceof Date) {
       const timestamp = Timestamp.fromDate(val as Date);
       return {
         timestampValue: {
@@ -165,9 +163,9 @@ export class Serializer {
 
       // If we encounter an empty object, we always need to send it to make sure
       // the server creates a map entry.
-      if (!is.empty(val)) {
+      if (Object.keys(val).length !== 0) {
         map.mapValue!.fields = this.encodeFields(val);
-        if (is.empty(map.mapValue!.fields)) {
+        if (Object.keys(map.mapValue!.fields!).length === 0) {
           return null;
         }
       }
@@ -212,7 +210,7 @@ export class Serializer {
       }
       case 'arrayValue': {
         const array: AnyJs[] = [];
-        if (is.array(proto.arrayValue!.values)) {
+        if (Array.isArray(proto.arrayValue!.values)) {
           for (const value of proto.arrayValue!.values!) {
             array.push(this.decodeValue(value));
           }

@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-import * as is from 'is';
 import {google} from '../protos/firestore_proto_api';
 import api = google.firestore.v1beta1;
 
 import {createErrorDescription, customObjectMessage, validateMinNumberOfArguments, validateString} from './validate';
 import {AnyDuringMigration} from './types';
+import {util} from 'protobufjs';
+import isObject = util.isObject;
+import {obj} from 'through2';
 
 /*!
  * A regular expression to verify an absolute Resource Path in Firestore. It
@@ -403,7 +405,7 @@ export class ResourcePath extends Path<ResourcePath> {
  */
 export function validateResourcePath(
     arg: string|number, resourcePath: string): boolean {
-  if (!is.string(resourcePath) || resourcePath === '') {
+  if (typeof resourcePath !== 'string' || resourcePath === '') {
     throw new Error(`${
         createErrorDescription(
             arg, 'resource path')} Path must be a non-empty string.`);
@@ -450,7 +452,7 @@ export class FieldPath extends Path<FieldPath> {
   constructor(...segments: string[]) {
     validateMinNumberOfArguments('FieldPath', arguments, 1);
 
-    const elements: string[] = is.array(segments[0]) ?
+    const elements: string[] = Array.isArray(segments[0]) ?
         segments[0] as AnyDuringMigration :
         segments;
 
@@ -564,8 +566,7 @@ export function validateFieldPath(
           ' The path cannot be omitted.');
     }
 
-    if (is.object(fieldPath) &&
-        (fieldPath as object).constructor.name === 'FieldPath') {
+    if (typeof fieldPath === 'object' && fieldPath !== null  && fieldPath.constructor.name === 'FieldPath') {
       throw new Error(customObjectMessage(arg, fieldPath));
     }
 

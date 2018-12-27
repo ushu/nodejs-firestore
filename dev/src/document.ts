@@ -16,7 +16,6 @@
 
 import * as assert from 'assert';
 const deepEqual = require('deep-equal');
-import * as is from 'is';
 
 import {google} from '../protos/firestore_proto_api';
 import {DeleteTransform, FieldTransform} from './field-value';
@@ -438,7 +437,7 @@ export class DocumentSnapshot {
    * @return {boolean}
    */
   get isEmpty(): boolean {
-    return is.undefined(this._fieldsProto) || is.empty(this._fieldsProto);
+    return this._fieldsProto === undefined || Object.keys(this._fieldsProto).length === 0;
   }
 
   /**
@@ -766,7 +765,7 @@ export class DocumentMask {
             DocumentMask.removeFromSortedArray(remainingPaths, [childPath]);
             result = result || {};
             result[key] = currentData[key];
-          } else if (is.object(currentData[key])) {
+          } else if (typeof currentData[key] === 'object' && currentData[key] !== null) {
             const childObject = processObject(currentData[key], childPath);
             if (childObject) {
               result = result || {};
@@ -883,7 +882,7 @@ export class DocumentTransform {
           throw new Error(
               `${val.methodName}() is not supported inside of array values.`);
         }
-      } else if (is.array(val)) {
+      } else if (Array.isArray(val)) {
         for (let i = 0; i < val.length; ++i) {
           // We need to verify that no array value contains a document transform
           encode_(val[i], path.append(String(i)), false);
@@ -1103,7 +1102,15 @@ export function validateUserInput(
     // Ok.
   } else if (val instanceof Timestamp) {
     // Ok.
-  } else if (is.object(val)) {
+  } else if (val instanceof Buffer) {
+    // Ok.
+  } else if (val instanceof Uint8Array) {
+    // Ok.
+  } else if (val instanceof Date) {
+       // Ok.
+  } else if (val === null) {
+    // Ok.
+  } else if (typeof val === 'object') {
     throw new Error(customObjectMessage(argumentName, val, path));
   }
 }
