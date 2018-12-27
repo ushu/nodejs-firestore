@@ -33,7 +33,7 @@ import {CollectionReference, validateComparisonOperator, validateDocumentReferen
 import {DocumentReference} from './reference';
 import {isPlainObject, Serializer} from './serializer';
 import {Timestamp} from './timestamp';
-import {Transaction} from './transaction';
+import {parseGetAllArguments, Transaction} from './transaction';
 import {DocumentData, GapicClient, ReadOptions, Settings, ValidationOptions} from './types';
 import {AnyDuringMigration, AnyJs} from './types';
 import {parseGetAllArguments, requestTag} from './util';
