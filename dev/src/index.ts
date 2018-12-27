@@ -31,9 +31,9 @@ import {CollectionReference} from './reference';
 import {DocumentReference} from './reference';
 import {Serializer} from './serializer';
 import {Timestamp} from './timestamp';
-import {Transaction} from './transaction';
+import {parseGetAllArguments, Transaction} from './transaction';
 import {DocumentData, GapicClient, ReadOptions, Settings} from './types';
-import {parseGetAllArguments, requestTag} from './util';
+import { requestTag} from './util';
 import {validateBoolean, validateFunction, validateInteger, validateMinNumberOfArguments, validateObject, validateString,} from './validate';
 import {WriteBatch} from './write-batch';
 

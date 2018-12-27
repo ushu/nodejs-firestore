@@ -28,6 +28,7 @@ import {AnyJs, ApiMapValue, DocumentData, UpdateData, UserInput, ValidationOptio
 import api = google.firestore.v1beta1;
 import {createErrorDescription, customObjectMessage,} from './validate';
 import {GeoPoint} from './geo-point';
+import {isEmpty} from './util';
 
 
 /*!
@@ -167,7 +168,7 @@ export class DocumentSnapshot {
           if (value instanceof FieldTransform) {
             // If there is already data at this path, we need to retain it.
             // Otherwise, we don't include it in the DocumentSnapshot.
-            return !is.empty(target) ? target : null;
+            return !isEmpty(target) ? target : null;
           }
           // The merge is done.
           const leafNode = serializer.encodeValue(value);
@@ -191,7 +192,7 @@ export class DocumentSnapshot {
             target[key] = childNode;
             return target;
           } else {
-            return !is.empty(target) ? target : null;
+            return !isEmpty(target) ? target : null;
           }
         }
       } else {

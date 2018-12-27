@@ -15,6 +15,7 @@
  */
 
 import {FieldPath} from './path';
+import {isObject} from './util';
 
 /**
  * Formats the given word as plural conditionally given the preceding number.
@@ -193,7 +194,7 @@ export function customObjectMessage(
     argumentName: string|number, val, path?: FieldPath): string {
   const fieldPathMessage = path ? ` (found in field ${path.toString()})` : '';
 
-  if (typeof val === 'object' && val !== null) {
+  if (isObject(val)) {
     const typeName = val.constructor.name;
     switch (typeName) {
       case 'DocumentReference':
@@ -208,6 +209,11 @@ export function customObjectMessage(
                    typeName}" that doesn't match the ` +
             `expected instance${fieldPathMessage}. Please ensure that the ` +
             'Firestore types you are using are from the same NPM package.)';
+      case 'Object':
+        return `${
+          createErrorDescription(
+              argumentName, 'Firestore document')} Invalid use of type "${
+          typeof val}" as a Firestore argument${fieldPathMessage}.`;
       default:
         return `${
                    createErrorDescription(
@@ -218,10 +224,11 @@ export function customObjectMessage(
             'objects with custom prototypes (i.e. objects that were created ' +
             'via the "new" operator).';
     }
-  } else {
+   }else {
     return `${
         createErrorDescription(
-            argumentName, 'Firestore document')} Invalid use of type "${
-        typeof val}" as a Firestore argument${fieldPathMessage}.`;
-  }
+            argumentName, 'Firestore document')} Input is not a plain JavaScript object${fieldPathMessage}.`;
+
+    }
+
 }

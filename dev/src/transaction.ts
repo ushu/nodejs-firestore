@@ -18,14 +18,19 @@ import * as proto from '../protos/firestore_proto_api';
 
 import {DocumentSnapshot, Precondition} from './document';
 import {Firestore, WriteBatch} from './index';
-import {FieldPath} from './path';
-import {DocumentReference, Query, QuerySnapshot} from './reference';
+import {FieldPath, validateFieldPath} from './path';
+import {
+  DocumentReference,
+  Query,
+  QuerySnapshot,
+  validateDocumentReference
+} from './reference';
 import {AnyJs, DocumentData, Precondition as PublicPrecondition, ReadOptions, SetOptions, UpdateData} from './types';
-import {parseGetAllArguments} from './util';
 import {requestTag} from './util';
 
 import api = proto.google.firestore.v1beta1;
-import {validateMinNumberOfArguments} from './validate';
+import {createErrorDescription, validateMinNumberOfArguments} from './validate';
+import {isPlainObject} from './serializer';
 
 /*!
  * Error message for transactional reads that were executed after performing
@@ -373,5 +378,95 @@ export class Transaction {
    */
   get requestTag(): string {
     return this._requestTag;
+  }
+}
+
+
+/**
+ * Parses the arguments for the `getAll()` call supported by both the Firestore
+ * and Transaction class.
+ *
+ * @private
+ * @param documentRefsOrReadOptions An array of document references followed by
+ * an optional ReadOptions object.
+ */
+export function parseGetAllArguments(
+    documentRefsOrReadOptions: Array<DocumentReference|ReadOptions>):
+    {documents: DocumentReference[], fieldMask: FieldPath[]|null} {
+  let documents: DocumentReference[];
+  let readOptions: ReadOptions|undefined = undefined;
+
+  // In the original release of the SDK, getAll() was documented to accept
+  // either a varargs list of DocumentReferences or a single array of
+  // DocumentReferences. To support this usage in the TypeScript client, we have
+  // to manually verify the arguments to determine which input the user
+  // provided.
+  const usesDeprecatedArgumentStyle =
+      Array.isArray(documentRefsOrReadOptions[0]);
+
+  if (usesDeprecatedArgumentStyle) {
+    documents = documentRefsOrReadOptions[0] as DocumentReference[];
+    readOptions = documentRefsOrReadOptions[1] as ReadOptions;
+  } else {
+    if (documentRefsOrReadOptions.length > 0 &&
+        isPlainObject(
+            documentRefsOrReadOptions[documentRefsOrReadOptions.length - 1])) {
+      readOptions = documentRefsOrReadOptions.pop() as ReadOptions;
+      documents = documentRefsOrReadOptions as DocumentReference[];
+    } else {
+      documents = documentRefsOrReadOptions as DocumentReference[];
+    }
+  }
+
+  for (let i = 0; i < documents.length; ++i) {
+    validateDocumentReference(i, documents[i]);
+  }
+
+  validateReadOptions('options', readOptions);
+  const fieldMask = readOptions && readOptions.fieldMask ?
+      readOptions.fieldMask.map(
+          fieldPath => FieldPath.fromArgument(fieldPath)) :
+      null;
+  return {fieldMask, documents};
+}
+
+
+
+/**
+ * Validates the use of 'options' as ReadOptions and enforces that 'fieldMask'
+ * is an array of strings or field paths.
+ *
+ * @private
+ * @param options.fieldMask - The subset of fields to return from a read
+ * operation.
+ */
+export function validateReadOptions(arg: number|string, val?: unknown): void {
+  if (val !== undefined) {
+    if (typeof val !== 'object' && val === null) {
+      throw new Error(`${
+          createErrorDescription(
+              arg, 'read option')} Input is not an object.'`);
+    }
+
+    const options = val as {[k: string]: unknown};
+
+    if (options.fieldMask === undefined) {
+    }
+
+    if (!Array.isArray(options.fieldMask)) {
+      throw new Error(`${
+          createErrorDescription(
+              arg, 'read option')} "fieldMask" is not an array.`);
+    }
+
+    for (let i = 0; i < options.fieldMask.length; ++i) {
+      try {
+        validateFieldPath(i, options.fieldMask[i]);
+      } catch (err) {
+        throw new Error(`${
+            createErrorDescription(
+                arg, 'read option')} "fieldMask" is not valid: ${err.message}`);
+      }
+    }
   }
 }
