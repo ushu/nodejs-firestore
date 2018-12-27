@@ -25,12 +25,12 @@ import {FieldPath, validateFieldPath} from './path';
 import {DocumentReference, validateDocumentReference} from './reference';
 import {isPlainObject, Serializer} from './serializer';
 import {Timestamp} from './timestamp';
-import {Precondition as PublicPrecondition, SetOptions, UpdateData} from './types';
+import {Precondition as PublicPrecondition, SetOptions, UpdateData, UpdateMap} from './types';
 import {DocumentData} from './types';
-import {requestTag} from './util';
+import {isObject, requestTag} from './util';
 
 import api = google.firestore.v1beta1;
-import {createErrorDescription, customObjectMessage, validateMaxNumberOfArguments, validateMinNumberOfArguments} from './validate';
+import {invalidArgumentMessage, customObjectMessage, validateMaxNumberOfArguments, validateMinNumberOfArguments, AllowOptional, validateOptional} from './validate';
 
 /*!
  * Google Cloud Functions terminates idle connections after two minutes. After
@@ -204,7 +204,7 @@ export class WriteBatch {
   delete(documentRef: DocumentReference, precondition?: PublicPrecondition):
       WriteBatch {
     validateDocumentReference('documentRef', documentRef);
-    validateDeletePrecondition('precondition', precondition);
+    validateDeletePrecondition('precondition', precondition, {optional: true});
 
     this.verifyNotCommitted();
 
@@ -252,7 +252,7 @@ export class WriteBatch {
    */
   set(documentRef: DocumentReference, data: DocumentData,
       options?: SetOptions): WriteBatch {
-    validateSetOptions('options', options);
+    validateSetOptions('options', options, {optional: true});
     const mergeLeaves = options && options.merge === true;
     const mergePaths = options && options.mergeFields;
 
@@ -400,7 +400,7 @@ export class WriteBatch {
       }
     }
 
-    validateUpdate('dataOrField', updateMap);
+    validatNoConflictingFields('dataOrField', updateMap);
 
     const document = DocumentSnapshot.fromUpdateMap(documentRef, updateMap);
     const documentMask = DocumentMask.fromUpdateMap(updateMap);
@@ -574,23 +574,20 @@ export class WriteBatch {
 
 
 /**
- * Validates the use of 'options' as a Precondition and enforces that 'exists'
+ * Validates the use of 'value' as a Precondition and enforces that 'exists'
  * and 'lastUpdateTime' use valid types.
  *
- * @private
- * @param options.exists Whether the referenced document should exist.
- * @param options.lastUpdateTime The last update time of the referenced
- * document in Firestore.
+ * @param arg The argument name or argument index (for varargs methods).
+ * @param value The object to validate
  * @param allowExist Whether to allow the 'exists' preconditions.
- * @returns 'true' if the input is a valid Precondition.
  */
 function validatePrecondition(
-    arg: string|number, val: unknown, allowExist: boolean): void {
-  if (typeof val !== 'object' || val === null) {
+    arg: string|number, value: unknown, allowExist: boolean): void {
+  if (typeof value !== 'object' || value === null) {
     throw new Error('Input is not an object.');
   }
 
-  const precondition = val as {[k: string]: unknown};
+  const precondition = value as {[k: string]: unknown};
 
   let conditions = 0;
 
@@ -598,12 +595,12 @@ function validatePrecondition(
     ++conditions;
     if (!allowExist) {
       throw new Error(`${
-          createErrorDescription(
+          invalidArgumentMessage(
               arg, 'precondition')} "exists" is not an allowed condition.`);
     }
     if (typeof precondition.exists !== 'boolean') {
       throw new Error(`${
-          createErrorDescription(
+          invalidArgumentMessage(
               arg, 'precondition')} "exists" is not a boolean.'`);
     }
   }
@@ -612,7 +609,7 @@ function validatePrecondition(
     ++conditions;
     if (!(precondition.lastUpdateTime instanceof Timestamp)) {
       throw new Error(`${
-          createErrorDescription(
+          invalidArgumentMessage(
               arg,
               'precondition')} "lastUpdateTime" is not a Firestore Timestamp.`);
     }
@@ -620,90 +617,105 @@ function validatePrecondition(
 
   if (conditions > 1) {
     throw new Error(`${
-        createErrorDescription(
+        invalidArgumentMessage(
             arg, 'precondition')} Input contains more than one condition.`);
   }
 }
 
-export function validateUpdatePrecondition(
-    arg: string|number, precondition?: unknown): void {
-  if (precondition !== undefined) {
-    validatePrecondition(arg, precondition, /* allowExists= */ false);
-  }
-}
 
-export function validateDeletePrecondition(
-    arg: string|number, precondition?: unknown): void {
-  if (precondition !== undefined) {
-    validatePrecondition(arg, precondition, /* allowExists= */ true);
+/**
+ * Validates the use of 'value' as an update Precondition.
+ *
+ * @param arg The argument name or argument index (for varargs methods).
+ * @param value The object to validate.
+ * @param options Optional validation options specifying whether the valued can
+ * be omitted.
+ */
+function validateUpdatePrecondition(
+    arg: string|number, value: unknown, options?: AllowOptional): void {
+  if (!validateOptional(value, options)) {
+    validatePrecondition(arg, value, /* allowExists= */ false);
   }
 }
 
 /**
- * Validates the use of 'options' as SetOptions and enforces that 'merge' is a
- * boolean.
+ * Validates the use of 'value' as a delete Precondition.
  *
- * @private
- * @param options.merge - Whether set() should merge the provided data into an
- * existing document.
- * @param options.mergeFields - Whether set() should only merge the specified
- * set of fields.
- * @returns 'true' if the input is a valid SetOptions object.
+ * @param arg The argument name or argument index (for varargs methods).
+ * @param value The object to validate.
+ * @param options Optional validation options specifying whether the valued can
+ * be omitted.
  */
-export function validateSetOptions(arg: string|number, val: unknown): void {
-  if (val === undefined) {
-    return;
-  }
-
-  if (typeof val !== 'object' || val === null) {
-    throw new Error(`${
-        createErrorDescription(arg, 'set() option')} Input is not an object.`);
-  }
-
-  const options = val as {[k: string]: unknown};
-
-  if (options.merge !== undefined && typeof options.merge !== 'boolean') {
-    throw new Error(`${
-        createErrorDescription(
-            arg, 'set() option')} "merge" is not a boolean.`);
-  }
-
-  if (options.mergeFields !== undefined) {
-    if (!Array.isArray(options.mergeFields)) {
-      throw new Error(`${
-          createErrorDescription(
-              arg, 'set() option')} "mergeFields" is not an array.`);
-    }
-
-    for (let i = 0; i < options.mergeFields.length; ++i) {
-      try {
-        validateFieldPath(i, options.mergeFields[i]);
-      } catch (err) {
-        throw new Error(`${
-            createErrorDescription(
-                arg,
-                'set() option')} "mergeFields" is not valid: ${err.message}`);
-      }
-    }
-  }
-
-  if (options.merge !== undefined && options.mergeFields !== undefined) {
-    throw new Error(`${
-        createErrorDescription(
-            arg,
-            'set() option')} You cannot specify both "merge" and "mergeFields".`);
+function validateDeletePrecondition(
+    arg: string|number, value: unknown, options?: AllowOptional): void {
+  if (!validateOptional(value, options)) {
+    validatePrecondition(arg, value, /* allowExists= */ true);
   }
 }
 
+/**
+ * Validates the use of 'value' as SetOptions and enforces that 'merge' is a
+ * boolean.
+ *
+ * @private
+ * @param arg The argument name or argument index (for varargs methods).
+ * @param value The object to validate.
+ * @param options Optional validation options specifying whether the valued can
+ * be omitted.
+ * @returns 'true' if the input is a valid SetOptions object.
+ */
+export function validateSetOptions(
+    arg: string|number, value: unknown, options?: AllowOptional): void {
+  if (!validateOptional(value, options)) {
+    if (!isObject(value)) {
+      throw new Error(`${
+          invalidArgumentMessage(
+              arg, 'set() option')} Input is not an object.`);
+    }
 
+    const setOptions = value as {[k: string]: unknown};
+
+    if ('merge' in setOptions && typeof setOptions.merge !== 'boolean') {
+      throw new Error(`${
+          invalidArgumentMessage(
+              arg, 'set() option')} "merge" is not a boolean.`);
+    }
+
+    if ('mergeFields' in setOptions) {
+      if (!Array.isArray(setOptions.mergeFields)) {
+        throw new Error(`${
+            invalidArgumentMessage(
+                arg, 'set() option')} "mergeFields" is not an array.`);
+      }
+
+      for (let i = 0; i < setOptions.mergeFields.length; ++i) {
+        try {
+          validateFieldPath(i, setOptions.mergeFields[i]);
+        } catch (err) {
+          throw new Error(`${
+              invalidArgumentMessage(
+                  arg,
+                  'set() option')} "mergeFields" is not valid: ${err.message}`);
+        }
+      }
+    }
+
+    if ('merge' in setOptions && 'mergeFields' in setOptions) {
+      throw new Error(`${
+          invalidArgumentMessage(
+              arg,
+              'set() option')} You cannot specify both "merge" and "mergeFields".`);
+    }
+  }
+}
 
 /**
  * Validates a JavaScript object for usage as a Firestore document.
  *
  * @private
+ * @param arg The argument name or argument index (for varargs methods).
  * @param obj JavaScript object to validate.
- * @param options Validation options
- * @returns 'true' when the object is valid.
+ * @param allowDeletes Whether to allow FieldValue.delete() sentinels.
  * @throws when the object is invalid.
  */
 export function validateDocumentData(
@@ -728,14 +740,15 @@ export function validateDocumentData(
   }
 }
 
-/*!
+/**
  * Validates that the update data does not contain any ambiguous field
  * definitions (such as 'a.b' and 'a').
  *
+ * @param arg The argument name or argument index (for varargs methods).
  * @param data An update map with field/value pairs.
  * @returns 'true' if the input is a valid update map.
  */
-export function validateUpdate(arg: string|number, data: Map<FieldPath, unknown>): void {
+function validatNoConflictingFields(arg: string|number, data: UpdateMap): void {
   const fields: FieldPath[] = [];
   data.forEach((value, key) => {
     fields.push(key);
@@ -745,23 +758,20 @@ export function validateUpdate(arg: string|number, data: Map<FieldPath, unknown>
 
   for (let i = 1; i < fields.length; ++i) {
     if (fields[i - 1].isPrefixOf(fields[i])) {
-      throw new Error(`${createErrorDescription(arg, 'update map')} Field "${
+      throw new Error(`${invalidArgumentMessage(arg, 'update map')} Field "${
           fields[i - 1]}" was specified multiple times.`);
     }
   }
 }
 
-
 /**
- * Validates a JavaScript object for usage as a Firestore document.
+ * Validates that a JavaScript object is a map of field paths to field values.
  *
- * @private
+ * @param arg The argument name or argument index (for varargs methods).
  * @param obj JavaScript object to validate.
- * @param options Validation options
- * @returns 'true' when the object is valid.
  * @throws when the object is invalid.
  */
-export function validateUpdateMap(arg: string|number, obj: unknown): void {
+function validateUpdateMap(arg: string|number, obj: unknown): void {
   if (!isPlainObject(obj)) {
     throw new Error(customObjectMessage(arg, obj));
   }

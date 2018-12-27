@@ -17,12 +17,7 @@
 import {google} from '../protos/firestore_proto_api';
 import api = google.firestore.v1beta1;
 
-import {createErrorDescription, customObjectMessage, validateMinNumberOfArguments, validateString} from './validate';
-import {AnyDuringMigration} from './types';
-import {util} from 'protobufjs';
-import isObject = util.isObject;
-import {obj} from 'through2';
-
+import {invalidArgumentMessage, customObjectMessage, validateMinNumberOfArguments, validateString} from './validate';
 /*!
  * A regular expression to verify an absolute Resource Path in Firestore. It
  * extracts the project ID, the database name and the relative resource path
@@ -407,13 +402,13 @@ export function validateResourcePath(
     arg: string|number, resourcePath: string): boolean {
   if (typeof resourcePath !== 'string' || resourcePath === '') {
     throw new Error(`${
-        createErrorDescription(
+        invalidArgumentMessage(
             arg, 'resource path')} Path must be a non-empty string.`);
   }
 
   if (resourcePath.indexOf('//') >= 0) {
     throw new Error(`${
-        createErrorDescription(
+        invalidArgumentMessage(
             arg, 'resource path')} Paths must not contain //.`);
   }
 
@@ -453,7 +448,7 @@ export class FieldPath extends Path<FieldPath> {
     validateMinNumberOfArguments('FieldPath', arguments, 1);
 
     const elements: string[] = Array.isArray(segments[0]) ?
-        segments[0] as AnyDuringMigration :
+        (segments[0] as unknown) as string[] :
         segments;
 
     for (let i = 0; i < elements.length; ++i) {
@@ -547,8 +542,6 @@ export class FieldPath extends Path<FieldPath> {
   }
 }
 
-
-
 /**
  * Returns true if the provided value can be used as a field path argument.
  *
@@ -562,36 +555,37 @@ export function validateFieldPath(
   if (!(fieldPath instanceof FieldPath)) {
     if (fieldPath === undefined) {
       throw new Error(
-          createErrorDescription(arg, 'field path') +
+          invalidArgumentMessage(arg, 'field path') +
           ' The path cannot be omitted.');
     }
 
-    if (typeof fieldPath === 'object' && fieldPath !== null  && fieldPath.constructor.name === 'FieldPath') {
+    if (typeof fieldPath === 'object' && fieldPath !== null &&
+        fieldPath.constructor.name === 'FieldPath') {
       throw new Error(customObjectMessage(arg, fieldPath));
     }
 
     if (typeof fieldPath !== 'string') {
       throw new Error(`${
-          createErrorDescription(
+          invalidArgumentMessage(
               arg,
               'field path')} Paths can only be specified as strings or via a FieldPath object.`);
     }
 
     if (fieldPath.indexOf('..') >= 0) {
       throw new Error(`${
-          createErrorDescription(
+          invalidArgumentMessage(
               arg, 'field path')} Paths must not contain ".." in them.`);
     }
 
     if (fieldPath.startsWith('.') || fieldPath.endsWith('.')) {
       throw new Error(`${
-          createErrorDescription(
+          invalidArgumentMessage(
               arg, 'field path')} Paths must not start or end with ".".`);
     }
 
     if (!FIELD_PATH_RE.test(fieldPath)) {
       throw new Error(`${
-          createErrorDescription(
+          invalidArgumentMessage(
               arg, 'field path')} Paths can't be empty and must not contain
       "*~/[]".`);
     }

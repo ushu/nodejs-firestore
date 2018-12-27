@@ -14,12 +14,6 @@
  * limitations under the License.
  */
 
-import {FieldPath, validateFieldPath} from './path';
-import {DocumentReference, validateDocumentReference} from './reference';
-import {isPlainObject} from './serializer';
-import {ReadOptions} from './types';
-import {createErrorDescription} from './validate';
-
 /**
  * Generate a unique client-side identifier.
  *
@@ -50,10 +44,14 @@ export function requestTag(): string {
   return autoId().substr(0, 5);
 }
 
-export function isObject(val: unknown) {
-    return  Object.prototype.toString.call(val) === '[object Object]';
+export function isObject(val: unknown): val is object {
+  return Object.prototype.toString.call(val) === '[object Object]';
 }
 
-export function isEmpty(val: {}) {
-  return  Object.keys(val).length === 0;
+export function isEmpty(val: {}): boolean {
+  return Object.keys(val).length === 0;
+}
+
+export function isFunction(val: unknown): boolean {
+  return val && {}.toString.call(val) === '[object Function]';
 }

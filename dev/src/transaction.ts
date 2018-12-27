@@ -19,17 +19,12 @@ import * as proto from '../protos/firestore_proto_api';
 import {DocumentSnapshot, Precondition} from './document';
 import {Firestore, WriteBatch} from './index';
 import {FieldPath, validateFieldPath} from './path';
-import {
-  DocumentReference,
-  Query,
-  QuerySnapshot,
-  validateDocumentReference
-} from './reference';
-import {AnyJs, DocumentData, Precondition as PublicPrecondition, ReadOptions, SetOptions, UpdateData} from './types';
+import {DocumentReference, Query, QuerySnapshot, validateDocumentReference} from './reference';
+import {DocumentData, Precondition as PublicPrecondition, ReadOptions, SetOptions, UpdateData} from './types';
 import {requestTag} from './util';
 
 import api = proto.google.firestore.v1beta1;
-import {createErrorDescription, validateMinNumberOfArguments} from './validate';
+import {invalidArgumentMessage, validateMinNumberOfArguments} from './validate';
 import {isPlainObject} from './serializer';
 
 /*!
@@ -277,11 +272,10 @@ export class Transaction {
    */
   update(
       documentRef: DocumentReference, dataOrField: UpdateData|string|FieldPath,
-      ...preconditionOrValues: Array<Precondition|AnyJs|string|FieldPath>):
+      ...preconditionOrValues: Array<Precondition|unknown|string|FieldPath>):
       Transaction {
     validateMinNumberOfArguments('update', arguments, 2);
 
-    preconditionOrValues = Array.prototype.slice.call(arguments, 2);
     this._writeBatch.update.apply(this._writeBatch, [
       documentRef, dataOrField
     ].concat(preconditionOrValues) as [DocumentReference, string]);
@@ -444,7 +438,7 @@ export function validateReadOptions(arg: number|string, val?: unknown): void {
   if (val !== undefined) {
     if (typeof val !== 'object' && val === null) {
       throw new Error(`${
-          createErrorDescription(
+          invalidArgumentMessage(
               arg, 'read option')} Input is not an object.'`);
     }
 
@@ -455,7 +449,7 @@ export function validateReadOptions(arg: number|string, val?: unknown): void {
 
     if (!Array.isArray(options.fieldMask)) {
       throw new Error(`${
-          createErrorDescription(
+          invalidArgumentMessage(
               arg, 'read option')} "fieldMask" is not an array.`);
     }
 
@@ -464,7 +458,7 @@ export function validateReadOptions(arg: number|string, val?: unknown): void {
         validateFieldPath(i, options.fieldMask[i]);
       } catch (err) {
         throw new Error(`${
-            createErrorDescription(
+            invalidArgumentMessage(
                 arg, 'read option')} "fieldMask" is not valid: ${err.message}`);
       }
     }

@@ -14,19 +14,16 @@
  * limitations under the License.
  */
 
-
-import {validateMinNumberOfArguments} from './validate';
-
 const deepEqual = require('deep-equal');
 
 import * as proto from '../protos/firestore_proto_api';
 
-import {AnyJs} from './types';
 
 import api = proto.google.firestore.v1beta1;
 import {Serializer} from './serializer';
 import {FieldPath} from './path';
 import {validateUserInput} from './document';
+import {validateMinNumberOfArguments} from './validate';
 
 /**
  * Sentinel values that can be used when writing documents with set(), create()
@@ -106,7 +103,7 @@ export class FieldValue {
    *   // doc.get('array') contains field 'foo'
    * });
    */
-  static arrayUnion(...elements: AnyJs[]): FieldValue {
+  static arrayUnion(...elements: unknown[]): FieldValue {
     validateMinNumberOfArguments('FieldValue.arrayUnion', arguments, 1);
     return new ArrayUnionTransform(elements);
   }
@@ -133,7 +130,7 @@ export class FieldValue {
    *   // doc.get('array') no longer contains field 'foo'
    * });
    */
-  static arrayRemove(...elements: AnyJs[]): FieldValue {
+  static arrayRemove(...elements: unknown[]): FieldValue {
     validateMinNumberOfArguments('FieldValue.arrayRemove', arguments, 1);
     return new ArrayRemoveTransform(elements);
   }
@@ -283,7 +280,7 @@ class ServerTimestampTransform extends FieldTransform {
  * @private
  */
 class ArrayUnionTransform extends FieldTransform {
-  constructor(private readonly elements: AnyJs[]) {
+  constructor(private readonly elements: unknown[]) {
     super();
   }
 
@@ -334,7 +331,7 @@ class ArrayUnionTransform extends FieldTransform {
  * @private
  */
 class ArrayRemoveTransform extends FieldTransform {
-  constructor(private readonly elements: AnyJs[]) {
+  constructor(private readonly elements: unknown[]) {
     super();
   }
 
@@ -380,9 +377,9 @@ class ArrayRemoveTransform extends FieldTransform {
 }
 
 
-function validateArrayElement(arg: string|number, val: unknown): void {
+function validateArrayElement(arg: string|number, value: unknown): void {
   validateUserInput(
-      arg, val, 'array element',
+      arg, value, 'array element',
       /*path=*/{allowEmpty: true, allowDeletes: 'none', allowTransforms: false},
       /*path=*/undefined,
       /*level=*/0, /* inArray= */ true);

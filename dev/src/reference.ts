@@ -31,7 +31,7 @@ import {validateDocumentData, WriteBatch, WriteResult} from './write-batch';
 import {Timestamp} from './timestamp';
 import {FieldPath, ResourcePath, validateFieldPath, validateResourcePath} from './path';
 import {autoId, requestTag} from './util';
-import {validateFunction, validateInteger, validateMinNumberOfArguments, validatePropertyValue, customObjectMessage, createErrorDescription} from './validate';
+import {validateFunction, validateInteger, validateMinNumberOfArguments, validateEnumValue, customObjectMessage, invalidArgumentMessage} from './validate';
 import {DocumentData, UpdateData, Precondition, SetOptions} from './types';
 import {Serializer} from './serializer';
 import {Firestore} from './index';
@@ -1303,7 +1303,7 @@ export class Query {
    * @private
    */
   private convertReference(val: unknown): DocumentReference {
-    let reference : DocumentReference;
+    let reference: DocumentReference;
 
     if (typeof val === 'string') {
       reference =
@@ -1383,8 +1383,8 @@ export class Query {
    *   });
    * });
    */
-  startAfter(...fieldValuesOrDocumentSnapshot:
-                 Array<DocumentSnapshot|unknown>): Query {
+  startAfter(...fieldValuesOrDocumentSnapshot: Array<DocumentSnapshot|unknown>):
+      Query {
     validateMinNumberOfArguments('startAfter', arguments, 1);
 
     const options = extend(true, {}, this._queryOptions);
@@ -1417,8 +1417,8 @@ export class Query {
    *   });
    * });
    */
-  endBefore(...fieldValuesOrDocumentSnapshot:
-                Array<DocumentSnapshot|unknown>): Query {
+  endBefore(...fieldValuesOrDocumentSnapshot: Array<DocumentSnapshot|unknown>):
+      Query {
     validateMinNumberOfArguments('endBefore', arguments, 1);
 
     const options = extend(true, {}, this._queryOptions);
@@ -1738,58 +1738,6 @@ export class Query {
   }
 }
 
-/*!
- * Validates the input string as a field order direction.
- *
- * @param {string=} str Order direction to validate.
- * @throws {Error} when the direction is invalid
- */
-export function validateQueryOrder(
-    argumentName: string|number, op: unknown): void {
-  validatePropertyValue(
-      argumentName, op, Object.keys(directionOperators), {optional: true});
-}
-
-/*!
- * Validates the input string as a field comparison operator.
- *
- * @param {string} str Field comparison operator to validate.
- * @param {*} val Value that is used in the filter.
- * @throws {Error} when the comparison operation is invalid
- */
-export function validateQueryOperator(
-    argumentName: string|number, val: unknown, fieldValue: unknown): void {
-  validatePropertyValue(argumentName, val, Object.keys(comparisonOperators));
-
-  const op = comparisonOperators[val as string];
-
-  if (typeof op === 'string') {
-    if (typeof fieldValue === 'number' && isNaN(fieldValue) && op !== 'EQUAL') {
-      throw new Error(
-          'Invalid query. You can only perform equals comparisons on NaN.');
-    }
-
-    if (fieldValue === null && op !== 'EQUAL') {
-      throw new Error(
-          'Invalid query. You can only perform equals comparisons on Null.');
-    }
-  }
-}
-
-
-/*!
- * Validates that 'value' is a DocumentReference.
- *
- * @param {*} value The argument to validate.
- * @returns 'true' is value is an instance of DocumentReference.
- */
-export function validateDocumentReference(
-    arg: string|number, value: unknown): void {
-  if (!(value instanceof DocumentReference)) {
-    throw new Error(createErrorDescription(arg, 'DocumentReference'));
-  }
-}
-
 /**
  * A CollectionReference object can be used for adding documents, getting
  * document references, and querying for documents (using the methods
@@ -1988,6 +1936,61 @@ function createCollectionReference(firestore, path): CollectionReference {
   return new CollectionReference(firestore, path);
 }
 
+/*!
+ * Validates the input string as a field order direction.
+ *
+ * @param {string=} str Order direction to validate.
+ * @throws {Error} when the direction is invalid
+ */
+export function validateQueryOrder(
+    argumentName: string|number, op: unknown): void {
+  validateEnumValue(
+      argumentName, op, Object.keys(directionOperators), {optional: true});
+}
+
+/*!
+ * Validates the input string as a field comparison operator.
+ *
+ * @param {string} str Field comparison operator to validate.
+ * @param {*} val Value that is used in the filter.
+ * @throws {Error} when the comparison operation is invalid
+ */
+export function validateQueryOperator(
+    argumentName: string|number, val: unknown, fieldValue: unknown): void {
+  validateEnumValue(argumentName, val, Object.keys(comparisonOperators));
+
+  const op = comparisonOperators[val as string];
+
+  if (typeof fieldValue === 'number' && isNaN(fieldValue) && op !== 'EQUAL') {
+    throw new Error(
+        'Invalid query. You can only perform equals comparisons on NaN.');
+  }
+
+  if (fieldValue === null && op !== 'EQUAL') {
+    throw new Error(
+        'Invalid query. You can only perform equals comparisons on Null.');
+  }
+}
+
+/*!
+ * Validates that 'value' is a DocumentReference.
+ *
+ * @param {*} value The argument to validate.
+ * @returns 'true' is value is an instance of DocumentReference.
+ */
+export function validateDocumentReference(
+    arg: string|number, value: unknown): void {
+  if (!(value instanceof DocumentReference)) {
+    throw new Error(invalidArgumentMessage(arg, 'DocumentReference'));
+  }
+}
+
+function validateQueryValue(arg: string|number, val: unknown): void {
+  validateUserInput(
+      arg, val, 'query constraint',
+      {allowEmpty: true, allowDeletes: 'none', allowTransforms: false});
+}
+
 /**
  * Verifies euqality for an array of objects using the `isEqual` interface.
  *
@@ -2009,11 +2012,4 @@ function isArrayEqual<T extends {isEqual: (t: T) => boolean}>(
   }
 
   return true;
-}
-
-
-function validateQueryValue(arg: string|number, val: unknown): void {
-  validateUserInput(
-      arg, val, 'query constraint',
-      {allowEmpty: true, allowDeletes: 'none', allowTransforms: false});
 }

@@ -23,12 +23,12 @@ import {FieldPath, validateFieldPath} from './path';
 import {DocumentReference} from './reference';
 import {isPlainObject, Serializer} from './serializer';
 import {Timestamp} from './timestamp';
-import {ApiMapValue, DocumentData, UpdateData, ValidationOptions} from './types';
+import {ApiMapValue, DocumentData, UpdateMap, ValidationOptions} from './types';
 
 import api = google.firestore.v1beta1;
-import {createErrorDescription, customObjectMessage,} from './validate';
+import {invalidArgumentMessage, customObjectMessage,} from './validate';
 import {GeoPoint} from './geo-point';
-import {isEmpty} from './util';
+import {isEmpty, isObject} from './util';
 
 
 /*!
@@ -150,7 +150,7 @@ export class DocumentSnapshot {
    * @param data The field/value map to expand.
    * @return The created DocumentSnapshot.
    */
-  static fromUpdateMap(ref: DocumentReference, data: Map<FieldPath, unknown>):
+  static fromUpdateMap(ref: DocumentReference, data: UpdateMap):
       DocumentSnapshot {
     const serializer = ref.firestore._serializer!;
 
@@ -389,7 +389,7 @@ export class DocumentSnapshot {
    *   console.log(`Retrieved field value: ${field}`);
    * });
    */
-  get(field: string|FieldPath): any { // tslint:disable-line no-any
+  get(field: string|FieldPath): any {  // tslint:disable-line no-any
     validateFieldPath('field', field);
 
     const protoField = this.protoField(field);
@@ -438,7 +438,7 @@ export class DocumentSnapshot {
    * @return {boolean}
    */
   get isEmpty(): boolean {
-    return this._fieldsProto === undefined || Object.keys(this._fieldsProto).length === 0;
+    return this._fieldsProto === undefined || isEmpty(this._fieldsProto);
   }
 
   /**
@@ -598,7 +598,7 @@ export class DocumentMask {
    * @param data A map with fields to modify. Only the keys are used to extract
    * the document mask.
    */
-  static fromUpdateMap(data: Map<FieldPath, unknown>): DocumentMask {
+  static fromUpdateMap(data: UpdateMap): DocumentMask {
     const fieldPaths: FieldPath[] = [];
 
     data.forEach((value, key) => {
@@ -766,7 +766,7 @@ export class DocumentMask {
             DocumentMask.removeFromSortedArray(remainingPaths, [childPath]);
             result = result || {};
             result[key] = currentData[key];
-          } else if (typeof currentData[key] === 'object' && currentData[key] !== null) {
+          } else if (isObject(currentData[key])) {
             const childObject = processObject(currentData[key], childPath);
             if (childObject) {
               result = result || {};
@@ -855,11 +855,13 @@ export class DocumentTransform {
   static fromObject(ref: DocumentReference, obj: DocumentData):
       DocumentTransform {
     const updateMap = new Map<FieldPath, unknown>();
+
     for (const prop in obj) {
       if (obj.hasOwnProperty(prop)) {
         updateMap.set(new FieldPath(prop), obj[prop]);
       }
     }
+
     return DocumentTransform.fromUpdateMap(ref, updateMap);
   }
 
@@ -871,7 +873,7 @@ export class DocumentTransform {
    * @param data The update data to extract the transformations from.
    * @returns The Document Transform.
    */
-  static fromUpdateMap(ref: DocumentReference, data: Map<FieldPath, unknown>):
+  static fromUpdateMap(ref: DocumentReference, data: UpdateMap):
       DocumentTransform {
     const transforms = new Map<FieldPath, FieldTransform>();
 
@@ -1035,7 +1037,7 @@ export function validateUserInput(
     inArray?: boolean): void {
   if (path && path.size > MAX_DEPTH) {
     throw new Error(`${
-        createErrorDescription(
+        invalidArgumentMessage(
             argumentName, desc)} Input object is deeper than ${
         MAX_DEPTH} levels or contains a cycle.`);
   }
@@ -1066,34 +1068,34 @@ export function validateUserInput(
     }
   } else if (val === undefined) {
     throw new Error(`${
-        createErrorDescription(
+        invalidArgumentMessage(
             argumentName, desc)} Cannot use "undefined" as a Firestore value${
         fieldPathMessage}.`);
   } else if (val instanceof DeleteTransform) {
     if (inArray) {
-      throw new Error(`${createErrorDescription(argumentName, desc)} ${
+      throw new Error(`${invalidArgumentMessage(argumentName, desc)} ${
           val.methodName}() cannot be used inside of an array${
           fieldPathMessage}.`);
     } else if (
         (options.allowDeletes === 'root' && level !== 0) ||
         options.allowDeletes === 'none') {
-      throw new Error(`${createErrorDescription(argumentName, desc)} ${
+      throw new Error(`${invalidArgumentMessage(argumentName, desc)} ${
           val.methodName}() must appear at the top-level and can only be used in update() or set() with {merge:true}${
           fieldPathMessage}.`);
     }
   } else if (val instanceof FieldTransform) {
     if (inArray) {
-      throw new Error(`${createErrorDescription(argumentName, desc)} ${
+      throw new Error(`${invalidArgumentMessage(argumentName, desc)} ${
           val.methodName}() cannot be used inside of an array${
           fieldPathMessage}.`);
     } else if (!options.allowTransforms) {
-      throw new Error(`${createErrorDescription(argumentName, desc)} ${
+      throw new Error(`${invalidArgumentMessage(argumentName, desc)} ${
           val.methodName}() can only be used in set(), create() or update()${
           fieldPathMessage}.`);
     }
   } else if (val instanceof FieldPath) {
     throw new Error(`${
-        createErrorDescription(
+        invalidArgumentMessage(
             argumentName,
             desc)} Cannot use object of type "FieldPath" as a Firestore value${
         fieldPathMessage}.`);
@@ -1108,7 +1110,7 @@ export function validateUserInput(
   } else if (val instanceof Uint8Array) {
     // Ok.
   } else if (val instanceof Date) {
-       // Ok.
+    // Ok.
   } else if (val === null) {
     // Ok.
   } else if (typeof val === 'object') {

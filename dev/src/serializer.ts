@@ -95,7 +95,7 @@ export class Serializer {
       };
     }
 
-    if (typeof val === 'number' && !isNaN(val)&& val % 1 === 0) {
+    if (typeof val === 'number' && !isNaN(val) && val % 1 === 0) {
       return {
         integerValue: val as number,
       };

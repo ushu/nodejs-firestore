@@ -20,7 +20,9 @@ import {Timestamp} from './timestamp';
 
 import api = google.firestore.v1beta1;
 
-// A map in the format of the Proto API
+/**
+ * A map in the format of the Proto API
+ */
 export type ApiMapValue = {
   [k: string]: google.firestore.v1beta1.IValue
 };
@@ -89,6 +91,11 @@ export type DocumentData = {
 export type UpdateData = {
   [fieldPath: string]: unknown
 };
+
+/**
+ * Update data that has been resolved to a mapping of FieldPaths to values.
+ */
+export type UpdateMap = Map<FieldPath, unknown>;
 
 /**
  * An options object that configures conditional behavior of `update()` and

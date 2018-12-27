@@ -33,7 +33,7 @@ import {Serializer} from './serializer';
 import {Timestamp} from './timestamp';
 import {parseGetAllArguments, Transaction} from './transaction';
 import {DocumentData, GapicClient, ReadOptions, Settings} from './types';
-import { requestTag} from './util';
+import {requestTag} from './util';
 import {validateBoolean, validateFunction, validateInteger, validateMinNumberOfArguments, validateObject, validateString,} from './validate';
 import {WriteBatch} from './write-batch';
 
@@ -977,11 +977,11 @@ follow these steps, YOUR APP MAY BREAK.`);
       requestTag: string): Promise<NodeJS.ReadableStream>;
   private _initializeStream(
       resultStream: NodeJS.ReadWriteStream, requestTag: string,
-      request: {}): Promise<NodeJS.ReadWriteStream>;
+      request: string): Promise<NodeJS.ReadWriteStream>;
   private _initializeStream(
       resultStream: NodeJS.ReadableStream|NodeJS.ReadWriteStream,
       requestTag: string,
-      request?: {}): Promise<NodeJS.ReadableStream|NodeJS.ReadWriteStream> {
+      request?: string): Promise<NodeJS.ReadableStream|NodeJS.ReadWriteStream> {
     /** The last error we received and have not forwarded yet. */
     let errorReceived: Error|null = null;
 
@@ -1066,13 +1066,12 @@ follow these steps, YOUR APP MAY BREAK.`);
         logger(
             'Firestore._initializeStream', requestTag, 'Sending request: %j',
             request);
-        (resultStream as NodeJS.ReadWriteStream)
-            .write(request as string, 'utf-8', () => {
-              logger(
-                  'Firestore._initializeStream', requestTag,
-                  'Marking stream as healthy');
-              releaseStream();
-            });
+        (resultStream as NodeJS.ReadWriteStream).write(request, 'utf-8', () => {
+          logger(
+              'Firestore._initializeStream', requestTag,
+              'Marking stream as healthy');
+          releaseStream();
+        });
       }
     });
   }
@@ -1189,7 +1188,7 @@ follow these steps, YOUR APP MAY BREAK.`);
    * @returns A Promise with the resulting read/write stream.
    */
   readWriteStream(
-      methodName: string, request: {}, requestTag: string,
+      methodName: string, request: string, requestTag: string,
       allowRetries: boolean): Promise<NodeJS.ReadWriteStream> {
     const self = this;
     const attempts = allowRetries ? MAX_REQUEST_RETRIES : 1;

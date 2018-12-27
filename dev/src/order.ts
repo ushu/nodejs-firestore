@@ -19,7 +19,6 @@ import api = google.firestore.v1beta1;
 
 import {detectValueType} from './convert';
 import {ResourcePath} from './path';
-import {customObjectMessage} from './validate';
 import {ApiMapValue} from './types';
 
 /*!
