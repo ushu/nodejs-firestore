@@ -577,6 +577,7 @@ export class WriteBatch {
  * Validates the use of 'value' as a Precondition and enforces that 'exists'
  * and 'lastUpdateTime' use valid types.
  *
+ * @private
  * @param arg The argument name or argument index (for varargs methods).
  * @param value The object to validate
  * @param allowExist Whether to allow the 'exists' preconditions.
@@ -626,6 +627,7 @@ function validatePrecondition(
 /**
  * Validates the use of 'value' as an update Precondition.
  *
+ * @private
  * @param arg The argument name or argument index (for varargs methods).
  * @param value The object to validate.
  * @param options Optional validation options specifying whether the valued can
@@ -641,6 +643,7 @@ function validateUpdatePrecondition(
 /**
  * Validates the use of 'value' as a delete Precondition.
  *
+ * @private
  * @param arg The argument name or argument index (for varargs methods).
  * @param value The object to validate.
  * @param options Optional validation options specifying whether the valued can
@@ -744,6 +747,7 @@ export function validateDocumentData(
  * Validates that the update data does not contain any ambiguous field
  * definitions (such as 'a.b' and 'a').
  *
+ * @private
  * @param arg The argument name or argument index (for varargs methods).
  * @param data An update map with field/value pairs.
  * @returns 'true' if the input is a valid update map.
@@ -767,6 +771,7 @@ function validatNoConflictingFields(arg: string|number, data: UpdateMap): void {
 /**
  * Validates that a JavaScript object is a map of field paths to field values.
  *
+ * @private
  * @param arg The argument name or argument index (for varargs methods).
  * @param obj JavaScript object to validate.
  * @throws when the object is invalid.

@@ -309,6 +309,7 @@ export function validateOptional(
 /**
  * Formats the given word as plural conditionally given the preceding number.
  *
+ * @private
  * @param num The number to use for formatting.
  * @param str The string to format.
  */
@@ -319,6 +320,7 @@ function formatPlural(num: number, str: string) {
 /**
  * Creates a descriptive name for the provided argument name or index.
  *
+ * @private
  * @param arg The argument name or argument index (for varargs methods).
  * @return Either the argument name or its index description.
  */
