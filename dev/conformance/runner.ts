@@ -32,6 +32,7 @@ import * as convert from '../src/convert';
 import {createInstance as createInstanceHelper} from '../test/util/helpers';
 import {AnyDuringMigration} from '../src/types';
 import {DocumentChangeType} from '../src/document-change';
+import {isObject} from '../src/util';
 
 const REQUEST_TIME = 'REQUEST_TIME';
 
@@ -92,7 +93,7 @@ const convertInput = {
   argument: json => {
     const obj = JSON.parse(json);
     function convertValue(value) {
-      if (typeof value !== 'object' && value !== null) {
+      if (isObject(value)) {
         return convertObject(value);
       } else if (Array.isArray(value)) {
         return convertArray(value);

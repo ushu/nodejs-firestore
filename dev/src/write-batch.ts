@@ -720,7 +720,7 @@ export function validateDocumentData(
       validateUserInput(
           arg, obj[prop], 'Firestore document', {
             allowEmpty: true,
-            allowDeletes: allowDeletes ? 'root' : 'none',
+            allowDeletes: allowDeletes ? 'all' : 'none',
             allowTransforms: true,
           },
           new FieldPath(prop));
