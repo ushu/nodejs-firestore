@@ -355,7 +355,7 @@ export class DocumentSnapshot {
    *   console.log(`Retrieved data: ${JSON.stringify(data)}`);
    * });
    */
-  data(): DocumentData|undefined {
+  data(): {[field: string]: any} |undefined { // tslint:disable-line no-any
     const fields = this._fieldsProto;
 
     if (fields === undefined) {

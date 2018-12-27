@@ -977,11 +977,11 @@ follow these steps, YOUR APP MAY BREAK.`);
       requestTag: string): Promise<NodeJS.ReadableStream>;
   private _initializeStream(
       resultStream: NodeJS.ReadWriteStream, requestTag: string,
-      request: string): Promise<NodeJS.ReadWriteStream>;
+      request: {}): Promise<NodeJS.ReadWriteStream>;
   private _initializeStream(
       resultStream: NodeJS.ReadableStream|NodeJS.ReadWriteStream,
       requestTag: string,
-      request?: string): Promise<NodeJS.ReadableStream|NodeJS.ReadWriteStream> {
+      request?: {}): Promise<NodeJS.ReadableStream|NodeJS.ReadWriteStream> {
     /** The last error we received and have not forwarded yet. */
     let errorReceived: Error|null = null;
 
@@ -1066,7 +1066,9 @@ follow these steps, YOUR APP MAY BREAK.`);
         logger(
             'Firestore._initializeStream', requestTag, 'Sending request: %j',
             request);
-        (resultStream as NodeJS.ReadWriteStream).write(request, 'utf-8', () => {
+        // The stream returned by the Gapic library accepts Protobuf messages.
+        // tslint:disable-next-line no-any
+        (resultStream as NodeJS.WritableStream).write(request as any, 'utf-8', () => {
           logger(
               'Firestore._initializeStream', requestTag,
               'Marking stream as healthy');
@@ -1131,8 +1133,8 @@ follow these steps, YOUR APP MAY BREAK.`);
    * takes a request and GAX options.
    * @param request The Protobuf request to send.
    * @param requestTag A unique client-assigned identifier for this request.
-   * @param {boolean} allowRetries Whether this is an idempotent request that
-   * can be retried.
+   * @param allowRetries Whether this is an idempotent request that can be
+   * retried.
    * @returns A Promise with the resulting read-only stream.
    */
   readStream(
@@ -1188,7 +1190,7 @@ follow these steps, YOUR APP MAY BREAK.`);
    * @returns A Promise with the resulting read/write stream.
    */
   readWriteStream(
-      methodName: string, request: string, requestTag: string,
+      methodName: string, request: {}, requestTag: string,
       allowRetries: boolean): Promise<NodeJS.ReadWriteStream> {
     const self = this;
     const attempts = allowRetries ? MAX_REQUEST_RETRIES : 1;

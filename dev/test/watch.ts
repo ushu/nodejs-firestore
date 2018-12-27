@@ -25,11 +25,11 @@ import {setTimeoutHandler} from '../src/backoff';
 import {DocumentSnapshotBuilder} from '../src/document';
 import {DocumentChangeType} from '../src/document-change';
 import {Serializer} from '../src/serializer';
-import {AnyDuringMigration, GrpcError} from '../src/types';
 
 import {createInstance} from './util/helpers';
 
 import api = proto.google.firestore.v1beta1;
+import {GrpcError} from '../src/types';
 
 // Change the argument to 'console.log' to enable debug output.
 Firestore.setLogFunction(() => {});
@@ -277,7 +277,7 @@ class StreamHelper {
       err = new Error('Server disconnect');
       err.code = 14;  // Unavailable
     }
-    (this.readStream as AnyDuringMigration).destroy(err);
+    (this.readStream as any).destroy(err); // tslint:disable-line no-any
   }
 }
 

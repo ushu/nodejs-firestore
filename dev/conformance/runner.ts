@@ -30,9 +30,9 @@ import {ResourcePath} from '../src/path';
 import * as convert from '../src/convert';
 
 import {createInstance as createInstanceHelper} from '../test/util/helpers';
-import {AnyDuringMigration} from '../src/types';
 import {DocumentChangeType} from '../src/document-change';
 import {isObject} from '../src/util';
+import {SetOptions} from '../src';
 
 const REQUEST_TIME = 'REQUEST_TIME';
 
@@ -351,7 +351,7 @@ function runTest(spec) {
   const setTest = spec => {
     const overrides = {commit: commitHandler(spec)};
     return createInstance(overrides).then(() => {
-      const setOption: AnyDuringMigration = {};
+      const setOption : {merge?:boolean, mergeFields?:Firestore.FieldPath[]} = {};
       if (spec.option && spec.option.all) {
         setOption.merge = true;
       } else if (spec.option && spec.option.fields) {

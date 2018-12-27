@@ -93,6 +93,18 @@ export type UpdateData = {
 };
 
 /**
+ * The direction of a `Query.orderBy()` clause is specified as 'desc' or 'asc'
+ * (descending or ascending).
+ */
+export type OrderByDirection = 'desc' | 'asc';
+
+/**
+ * Filter conditions in a `Query.where()` clause are specified using the
+ * strings '<', '<=', '==', '>=', '>', and 'array-contains'.
+ */
+export type WhereFilterOp = '<' | '<=' | '==' | '>=' | '>' | 'array-contains';
+
+/**
  * Update data that has been resolved to a mapping of FieldPaths to values.
  */
 export type UpdateMap = Map<FieldPath, unknown>;

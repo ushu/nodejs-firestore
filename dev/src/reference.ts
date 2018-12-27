@@ -31,8 +31,14 @@ import {validateDocumentData, WriteBatch, WriteResult} from './write-batch';
 import {Timestamp} from './timestamp';
 import {FieldPath, ResourcePath, validateFieldPath, validateResourcePath} from './path';
 import {autoId, requestTag} from './util';
-import {validateFunction, validateInteger, validateMinNumberOfArguments, validateEnumValue, customObjectMessage, invalidArgumentMessage} from './validate';
-import {DocumentData, UpdateData, Precondition, SetOptions} from './types';
+import {validateFunction, validateInteger, validateMinNumberOfArguments, validateEnumValue, invalidArgumentMessage} from './validate';
+import {
+  DocumentData,
+  UpdateData,
+  Precondition,
+  SetOptions,
+  WhereFilterOp, OrderByDirection
+} from './types';
 import {Serializer} from './serializer';
 import {Firestore} from './index';
 
@@ -44,9 +50,7 @@ import {Firestore} from './index';
  */
 const directionOperators: {[k: string]: api.StructuredQuery.Direction} = {
   asc: 'ASCENDING',
-  ASC: 'ASCENDING',
   desc: 'DESCENDING',
-  DESC: 'DESCENDING',
 };
 
 /*!
@@ -59,7 +63,6 @@ const comparisonOperators:
     {[k: string]: api.StructuredQuery.FieldFilter.Operator} = {
       '<': 'LESS_THAN',
       '<=': 'LESS_THAN_OR_EQUAL',
-      '=': 'EQUAL',
       '==': 'EQUAL',
       '>': 'GREATER_THAN',
       '>=': 'GREATER_THAN_OR_EQUAL',
@@ -1005,7 +1008,7 @@ export class Query {
    *   });
    * });
    */
-  where(fieldPath: string|FieldPath, opStr: string, value: unknown): Query {
+  where(fieldPath: string|FieldPath, opStr: WhereFilterOp, value: unknown): Query {
     validateFieldPath('fieldPath', fieldPath);
     validateQueryOperator('opStr', opStr, value);
     validateQueryValue('value', value);
@@ -1095,7 +1098,7 @@ export class Query {
    *   });
    * });
    */
-  orderBy(fieldPath: string|FieldPath, directionStr?: string): Query {
+  orderBy(fieldPath: string|FieldPath, directionStr?: OrderByDirection): Query {
     validateFieldPath('fieldPath', fieldPath);
     validateQueryOrder('directionStr', directionStr);
 
@@ -1704,8 +1707,8 @@ export class Query {
       (s1: QueryDocumentSnapshot, s2: QueryDocumentSnapshot) => number {
     return (doc1, doc2) => {
       // Add implicit sorting by name, using the last specified direction.
-      const lastDirection = this._fieldOrders.length === 0 ?
-          directionOperators.ASC :
+      const lastDirection : api.StructuredQuery.Direction = this._fieldOrders.length === 0 ?
+          'ASCENDING' :
           this._fieldOrders[this._fieldOrders.length - 1].direction;
       const orderBys = this._fieldOrders.concat(
           new FieldOrder(FieldPath.documentId(), lastDirection));
@@ -1728,7 +1731,7 @@ export class Query {
 
         if (comp !== 0) {
           const direction =
-              orderBy.direction === directionOperators.ASC ? 1 : -1;
+              orderBy.direction === 'ASCENDING' ? 1 : -1;
           return direction * comp;
         }
       }

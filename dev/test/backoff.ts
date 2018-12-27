@@ -17,7 +17,6 @@
 import {expect} from 'chai';
 
 import {ExponentialBackoff, setTimeoutHandler} from '../src/backoff';
-import {AnyDuringMigration} from '../src/types';
 
 const nop = () => {};
 
@@ -28,7 +27,7 @@ describe('ExponentialBackoff', () => {
     setTimeoutHandler(((callback, timeout) => {
                         observedDelays.push(timeout);
                         callback();
-                      }) as AnyDuringMigration);
+                      }));
   });
 
   beforeEach(() => {
