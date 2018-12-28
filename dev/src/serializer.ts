@@ -82,12 +82,12 @@ export class Serializer {
    * @param val The object to encode
    * @returns The Firestore Proto or null if we are deleting a field.
    */
-  encodeValue(val: AnyJs|AnyJs[]|Serializable): api.IValue|null {
+  encodeValue(val: unknown): api.IValue|null {
     if (val instanceof FieldTransform) {
       return null;
     }
 
-    if (is.string(val)) {
+    if (typeof val === 'string') {
       return {
         stringValue: val as string,
       };
@@ -99,20 +99,20 @@ export class Serializer {
       };
     }
 
-    if (typeof val === 'number' && is.integer(val)) {
+    if (typeof val === 'number' && !isNaN(val) && val % 1 === 0) {
       return {
         integerValue: val as number,
       };
     }
 
     // Integers are handled above, the remaining numbers are treated as doubles
-    if (is.number(val)) {
+    if (typeof val === 'number') {
       return {
         doubleValue: val as number,
       };
     }
 
-    if (is.date(val)) {
+    if (val instanceof Date) {
       const timestamp = Timestamp.fromDate(val as Date);
       return {
         timestampValue: {
@@ -136,9 +136,9 @@ export class Serializer {
     }
 
 
-    if (typeof val === 'object' && 'toProto' in val &&
-        typeof val.toProto === 'function') {
-      return val.toProto();
+    if (typeof val === 'object' && val !== null && 'toProto' in val &&
+        typeof (val as Serializable).toProto === 'function') {
+      return (val as Serializable).toProto();
     }
 
     if (val instanceof Array) {
@@ -166,9 +166,9 @@ export class Serializer {
 
       // If we encounter an empty object, we always need to send it to make sure
       // the server creates a map entry.
-      if (!is.empty(val)) {
+      if (!isEmpty(val)) {
         map.mapValue!.fields = this.encodeFields(val);
-        if (is.empty(map.mapValue!.fields)) {
+        if (isEmpty(map.mapValue!.fields!)) {
           return null;
         }
       }
@@ -176,7 +176,7 @@ export class Serializer {
       return map;
     }
 
-    throw customObjectError(val);
+    throw new Error(`Cannot encode value: ${val}`);
   }
 
   /**
@@ -186,7 +186,7 @@ export class Serializer {
    * @param proto A Firestore 'Value' Protobuf.
    * @returns The converted JS type.
    */
-  decodeValue(proto: api.IValue): AnyJs {
+  decodeValue(proto: api.IValue): unknown {
     const valueType = detectValueType(proto);
 
     switch (valueType) {
@@ -212,8 +212,8 @@ export class Serializer {
         return this.createReference(resourcePath.relativeName);
       }
       case 'arrayValue': {
-        const array: AnyJs[] = [];
-        if (is.array(proto.arrayValue!.values)) {
+        const array: unknown[] = [];
+        if (Array.isArray(proto.arrayValue!.values)) {
           for (const value of proto.arrayValue!.values!) {
             array.push(this.decodeValue(value));
           }
@@ -259,7 +259,7 @@ export class Serializer {
  * @param input The argument to verify.
  * @returns 'true' if the input can be a treated as a plain object.
  */
-export function isPlainObject(input: UserInput): boolean {
+export function isPlainObject(input: unknown): input is object {
   return (
       typeof input === 'object' && input !== null &&
       (Object.getPrototypeOf(input) === Object.prototype ||
